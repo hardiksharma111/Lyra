@@ -3,11 +3,16 @@ import pyaudio
 import struct
 import time
 
-ACCESS_KEY = "7EfH7ISm/yrqkn8Ue/7m4G1RVMT0Afd/N/bNpD8Bi9meSbYjZRkQfg=="
+def _load_key() -> str:
+    with open("Keys.txt", "r") as f:
+        for line in f:
+            if line.startswith("PICOVOICE"):
+                return line.split("=", 1)[1].strip()
+    raise ValueError("PICOVOICE key not found in Keys.txt")
 
 def wait_for_wakeword():
     porcupine = pvporcupine.create(
-        access_key=ACCESS_KEY,
+        access_key=_load_key(),
         keywords=["blueberry"]
     )
 

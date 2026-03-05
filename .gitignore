@@ -2,6 +2,7 @@
 Keys.txt
 *.env
 .env
+api_keys.txt
 
 # Personal data logs
 logs/conversation_log.json
@@ -12,6 +13,12 @@ logs/session_log.json
 memory/chroma_store/
 memory/categories.json
 
+# Future sensitive files
+memory/*.json
+*.key
+*.pem
+secrets.txt
+
 # Python cache
 __pycache__/
 *.pyc
@@ -19,3 +26,7 @@ __pycache__/
 
 # VS Code settings
 .vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

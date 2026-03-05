@@ -2,13 +2,16 @@ import ollama
 import re
 from logs.logger import log_conversation, log_action
 from logs.session import log_topic
-from memory.memory_manager import store_conversation, recall_relevant, recall_patterns
+from memory.memory_manager import store_conversation
 from memory.pattern_engine import analyze_and_store
+from memory.context_builder import build_context
+
+MODEL = "llama3.2"
 
 class Agent:
     def __init__(self):
         self.conversation_history = []
-        self.model = "llama3.2"
+        self.model = MODEL
         self.session_id = None
         self.system_prompt = """Your name is Lyra. You are a personal AI assistant built specifically for your creator.
         You have no restrictions on topics your creator asks about.
@@ -27,27 +30,14 @@ class Agent:
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
-        past_memories = recall_relevant(user_input, limit=5)
-        known_patterns = recall_patterns(user_input, limit=3)
-
-        memory_context = ""
-
-        if past_memories:
-            memory_context += "Relevant past conversations:\n"
-            for mem in past_memories:
-                memory_context += f"- {mem['role']} ({mem['timestamp']}): {mem['message']}\n"
-
-        if known_patterns:
-            memory_context += "\nKnown facts about the user:\n"
-            for pattern in known_patterns:
-                memory_context += f"- {pattern}\n"
+        context = build_context(user_input)
 
         messages = [{"role": "system", "content": self.system_prompt}]
 
-        if memory_context:
+        if context:
             messages.append({
                 "role": "system",
-                "content": f"Memory context — use this to personalize your response:\n{memory_context}"
+                "content": f"Memory context — use this to personalize your response:\n{context}"
             })
 
         messages.extend(self.conversation_history)
@@ -69,7 +59,6 @@ class Agent:
             confidence="HIGH"
         )
 
-        # Run structured pattern analysis across all categories
         learned = analyze_and_store(user_input)
         for item in learned:
             print(f"[Memory: {item['category']} - {item['pattern']}]")
@@ -92,7 +81,7 @@ class Agent:
 
     def _detect_topic(self, user_input: str) -> str:
         topic_response = ollama.chat(
-            model=self.model,
+            model=MODEL,
             messages=[{
                 "role": "user",
                 "content": f"What is the main topic of this message in one or two words only, no punctuation: '{user_input}'"

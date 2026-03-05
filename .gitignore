@@ -8,6 +8,10 @@ logs/conversation_log.json
 logs/action_log.json
 logs/session_log.json
 
+# Memory data — personal and private
+memory/chroma_store/
+memory/categories.json
+
 # Python cache
 __pycache__/
 *.pyc

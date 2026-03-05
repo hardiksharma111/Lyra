@@ -1,6 +1,7 @@
 import pvporcupine
 import pyaudio
 import struct
+import time
 
 ACCESS_KEY = "7EfH7ISm/yrqkn8Ue/7m4G1RVMT0Afd/N/bNpD8Bi9meSbYjZRkQfg=="
 
@@ -20,8 +21,6 @@ def wait_for_wakeword():
         frames_per_buffer=porcupine.frame_length
     )
 
-    print("Waiting for wake word 'blueberry'...")
-
     try:
         while True:
             pcm = audio_stream.read(porcupine.frame_length)
@@ -29,10 +28,19 @@ def wait_for_wakeword():
             keyword_index = porcupine.process(pcm)
 
             if keyword_index >= 0:
-                print("[Wake word detected]")
+                audio_stream.close()
+                pa.terminate()
+                porcupine.delete()
+                time.sleep(0.5)
                 return True
 
+    except Exception as e:
+        return False
+
     finally:
-        audio_stream.close()
-        pa.terminate()
-        porcupine.delete()
+        try:
+            audio_stream.close()
+            pa.terminate()
+            porcupine.delete()
+        except:
+            pass

@@ -1,0 +1,17 @@
+# API keys and sensitive files
+Keys.txt
+*.env
+.env
+
+# Personal data logs
+logs/conversation_log.json
+logs/action_log.json
+logs/session_log.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# VS Code settings
+.vscode/

@@ -2,9 +2,9 @@ from core.agent import Agent
 from voice import speak, listen
 from voice.wakeword import wait_for_wakeword
 from logs.session import start_session, end_session
+from memory.pattern_engine import print_profile, get_all_categories
 import threading
 import os
-import sys
 from threading import Lock
 
 os.system('cls' if os.name == 'nt' else 'clear')
@@ -32,6 +32,7 @@ def main():
     should_exit = [False]
 
     safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
+    safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
     safe_print("-" * 50)
 
     def handle_input(user_input: str) -> bool:
@@ -44,6 +45,15 @@ def main():
             end_session(session_id)
             should_exit[0] = True
             return True
+
+        if user_input.lower() == "profile":
+            print_profile()
+            return False
+
+        if user_input.lower() == "categories":
+            cats = get_all_categories()
+            safe_print(f"Current categories: {', '.join(cats)}\n")
+            return False
 
         safe_print(f"You: {user_input}")
         response = agent.think(user_input)

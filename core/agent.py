@@ -2,7 +2,8 @@ import ollama
 import re
 from logs.logger import log_conversation, log_action
 from logs.session import log_topic
-from memory.memory_manager import store_conversation, recall_relevant, recall_patterns, store_pattern
+from memory.memory_manager import store_conversation, recall_relevant, recall_patterns
+from memory.pattern_engine import analyze_and_store
 
 class Agent:
     def __init__(self):
@@ -24,15 +25,11 @@ class Agent:
 
     def think(self, user_input: str) -> str:
         log_conversation("user", user_input)
-
-        # Store what user said in long term memory
         store_conversation("user", user_input)
 
-        # Recall relevant past conversations and patterns
         past_memories = recall_relevant(user_input, limit=5)
         known_patterns = recall_patterns(user_input, limit=3)
 
-        # Build memory context to inject into prompt
         memory_context = ""
 
         if past_memories:
@@ -45,11 +42,9 @@ class Agent:
             for pattern in known_patterns:
                 memory_context += f"- {pattern}\n"
 
-        # Build messages with memory injected
         messages = [{"role": "system", "content": self.system_prompt}]
 
         if memory_context:
-            # Inject memory as a system-level context before conversation
             messages.append({
                 "role": "system",
                 "content": f"Memory context — use this to personalize your response:\n{memory_context}"
@@ -66,9 +61,7 @@ class Agent:
         agent_response = response['message']['content']
         agent_response = self._clean_response(agent_response)
 
-        # Store Lyra's response in long term memory too
         store_conversation("agent", agent_response)
-
         log_conversation("agent", agent_response)
         log_action(
             action="respond",
@@ -76,8 +69,10 @@ class Agent:
             confidence="HIGH"
         )
 
-        # Extract and store patterns about the user passively
-        self._extract_patterns(user_input)
+        # Run structured pattern analysis across all categories
+        learned = analyze_and_store(user_input)
+        for item in learned:
+            print(f"[Memory: {item['category']} - {item['pattern']}]")
 
         if self.session_id:
             topic = self._detect_topic(user_input)
@@ -94,28 +89,6 @@ class Agent:
         })
 
         return agent_response
-
-    def _extract_patterns(self, user_input: str) -> None:
-        # Ask Lyra to identify if user said anything worth remembering
-        # Things like preferences, habits, personal info
-        pattern_check = ollama.chat(
-            model=self.model,
-            messages=[{
-                "role": "user",
-                "content": f"""Does this message reveal anything personal about the user such as 
-                preferences, habits, schedule, likes, dislikes, or personal facts?
-                Message: '{user_input}'
-                If yes respond with: PATTERN: [the fact in one sentence]
-                If no respond with: NONE"""
-            }]
-        )
-
-        result = pattern_check['message']['content'].strip()
-
-        if result.startswith("PATTERN:"):
-            pattern = result.replace("PATTERN:", "").strip()
-            store_pattern(pattern, category="auto_detected")
-            print(f"[Memory: learned '{pattern}']")
 
     def _detect_topic(self, user_input: str) -> str:
         topic_response = ollama.chat(

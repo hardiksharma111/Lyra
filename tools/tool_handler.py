@@ -1,9 +1,18 @@
-from tools.system_controls import (
-    get_system_status, get_battery, get_brightness,
-    set_brightness, volume_up, volume_down, mute_volume,
-    unmute_volume, lock_screen, shutdown, cancel_shutdown,
-    open_app, set_volume
-)
+from core.platform import IS_ANDROID, IS_WINDOWS
+from groq import Groq
+import json
+import re
+
+# Windows-only tools
+if IS_WINDOWS:
+    from tools.system_controls import (
+        get_system_status, get_battery, get_brightness,
+        set_brightness, volume_up, volume_down, mute_volume,
+        unmute_volume, lock_screen, shutdown, cancel_shutdown,
+        open_app, set_volume
+    )
+
+# Cross-platform tools
 from tools.spotify_control import (
     play_pause, next_track, previous_track, get_current_track,
     play_song, play_artist, play_playlist,
@@ -17,9 +26,6 @@ from tools.google_control import (
     get_recent_emails, read_email_content,
     search_emails, get_assignments, get_courses
 )
-from groq import Groq
-import json
-import re
 
 MODEL = "llama-3.3-70b-versatile"
 
@@ -32,8 +38,15 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
-AVAILABLE_TOOLS = """
-Available tools:
+# Android-only system tools
+ANDROID_TOOLS = """
+- get_battery: Get battery percentage
+- get_volume: Get current volume
+- set_volume [level 0-15]: Set volume
+- get_wifi: Get WiFi info
+""" if IS_ANDROID else ""
+
+WINDOWS_TOOLS = """
 - get_system_status: Get CPU, RAM, battery, brightness info
 - get_battery: Get battery percentage and charging status
 - get_brightness: Get current screen brightness
@@ -47,6 +60,11 @@ Available tools:
 - shutdown [seconds]: Shutdown computer after delay
 - cancel_shutdown: Cancel a pending shutdown
 - open_app [app_name]: Open an application
+""" if IS_WINDOWS else ""
+
+AVAILABLE_TOOLS = f"""
+Available tools:
+{WINDOWS_TOOLS}{ANDROID_TOOLS}
 - play_pause: Play or pause Spotify
 - next_track: Skip to next track
 - previous_track: Go to previous track
@@ -114,32 +132,48 @@ def execute_tool(tool: str, params: dict) -> str | None:
     if tool == "none" or not tool:
         return None
 
-    if tool == "get_system_status":
-        return get_system_status()
-    if tool == "get_battery":
-        return get_battery()
-    if tool == "get_brightness":
-        return str(get_brightness()) + "% brightness"
-    if tool == "set_brightness":
-        return set_brightness(params.get("level", 50))
-    if tool == "volume_up":
-        return volume_up(params.get("steps", 5))
-    if tool == "volume_down":
-        return volume_down(params.get("steps", 5))
-    if tool == "set_volume":
-        return set_volume(params.get("level", 50))
-    if tool == "mute_volume":
-        return mute_volume()
-    if tool == "unmute_volume":
-        return unmute_volume()
-    if tool == "lock_screen":
-        return lock_screen()
-    if tool == "shutdown":
-        return shutdown(params.get("seconds", 30))
-    if tool == "cancel_shutdown":
-        return cancel_shutdown()
-    if tool == "open_app":
-        return open_app(params.get("app_name", ""))
+    # Windows-only tools
+    if IS_WINDOWS:
+        if tool == "get_system_status":
+            return get_system_status()
+        if tool == "get_battery":
+            return get_battery()
+        if tool == "get_brightness":
+            return str(get_brightness()) + "% brightness"
+        if tool == "set_brightness":
+            return set_brightness(params.get("level", 50))
+        if tool == "volume_up":
+            return volume_up(params.get("steps", 5))
+        if tool == "volume_down":
+            return volume_down(params.get("steps", 5))
+        if tool == "set_volume":
+            return set_volume(params.get("level", 50))
+        if tool == "mute_volume":
+            return mute_volume()
+        if tool == "unmute_volume":
+            return unmute_volume()
+        if tool == "lock_screen":
+            return lock_screen()
+        if tool == "shutdown":
+            return shutdown(params.get("seconds", 30))
+        if tool == "cancel_shutdown":
+            return cancel_shutdown()
+        if tool == "open_app":
+            return open_app(params.get("app_name", ""))
+
+    # Android system tools
+    if IS_ANDROID:
+        if tool == "get_battery":
+            import subprocess
+            result = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
+            return result.stdout.strip()
+        if tool == "set_volume":
+            import subprocess
+            level = params.get("level", 50)
+            subprocess.run(["termux-volume", "music", str(level)])
+            return f"Volume set to {level}"
+
+    # Cross-platform tools
     if tool == "play_pause":
         return play_pause()
     if tool == "next_track":

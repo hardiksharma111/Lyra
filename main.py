@@ -3,7 +3,10 @@ from voice import speak, listen
 from voice.wakeword import wait_for_wakeword
 from logs.session import start_session, end_session
 from memory.pattern_engine import print_profile, get_all_categories
+from tools.tool_handler import handle_tool
+from tools.system_controls import build_app_index
 import threading
+import time
 import os
 from threading import Lock
 
@@ -15,36 +18,31 @@ ERROR_RESPONSES = [
     "No speech detected"
 ]
 
-EXIT_COMMANDS = ["quit", "exit", "stop", "goodbye"]
 MAX_FAILED_ATTEMPTS = 5
-
 print_lock = Lock()
+
 
 def safe_print(*args, **kwargs):
     with print_lock:
         print(*args, **kwargs)
 
+
 def main():
     agent = Agent()
     session_id = start_session()
     agent.set_session(session_id)
-
     should_exit = [False]
 
     safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
     safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
     safe_print("-" * 50)
 
+    if not os.path.exists("memory/app_index.json"):
+        build_app_index()
+
     def handle_input(user_input: str) -> bool:
         if not user_input or user_input in ERROR_RESPONSES:
             return False
-
-        if user_input.lower() in EXIT_COMMANDS:
-            safe_print("Lyra: Goodbye.\n")
-            speak("Goodbye.")
-            end_session(session_id)
-            should_exit[0] = True
-            return True
 
         if user_input.lower() == "profile":
             print_profile()
@@ -56,6 +54,21 @@ def main():
             return False
 
         safe_print(f"You: {user_input}")
+
+        tool_result, should_exit_now = handle_tool(user_input)
+
+        if should_exit_now:
+            safe_print("Lyra: Goodbye.\n")
+            speak("Goodbye.")
+            end_session(session_id)
+            should_exit[0] = True
+            return True
+
+        if tool_result:
+            safe_print(f"Lyra: {tool_result}\n")
+            speak(tool_result)
+            return False
+
         response = agent.think(user_input)
         safe_print(f"Lyra: {response}\n")
         speak(response)
@@ -65,13 +78,17 @@ def main():
         while not should_exit[0]:
             try:
                 wait_for_wakeword()
+                time.sleep(0.5)
                 speak("Listening.")
                 safe_print("\n[Voice activated]")
-
                 failed_attempts = 0
 
                 while not should_exit[0]:
-                    voice_input = listen()
+                    try:
+                        voice_input = listen()
+                    except Exception as e:
+                        safe_print(f"Listen error: {e}")
+                        break
 
                     if not voice_input or voice_input in ERROR_RESPONSES:
                         failed_attempts += 1
@@ -92,6 +109,7 @@ def main():
 
             except Exception as e:
                 safe_print(f"Voice error: {e} - restarting...")
+                time.sleep(1)
                 continue
 
     voice_thread = threading.Thread(target=voice_loop, daemon=True)
@@ -107,6 +125,7 @@ def main():
         except Exception as e:
             safe_print(f"Error: {e}")
             continue
+
 
 if __name__ == "__main__":
     main()

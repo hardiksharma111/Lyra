@@ -12,6 +12,11 @@ memory/app_index.json
 memory/.spotify_cache
 memory/learned_devices.json
 memory/*.json
+memory/contacts.json
+memory/google_token_main.json
+memory/google_token_college.json
+memory/google_token_work.json
+setup_google.py
 
 # === CACHE + JUNK FILES ===
 __pycache__/

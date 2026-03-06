@@ -12,6 +12,13 @@ if IS_WINDOWS:
         open_app, set_volume
     )
 
+# Android-only tools
+if IS_ANDROID:
+    from tools.vision_control import (
+        analyze_screen, read_screen, describe_screen,
+        analyze_screen_with_question
+    )
+
 # Cross-platform tools
 from tools.spotify_control import (
     play_pause, next_track, previous_track, get_current_track,
@@ -44,6 +51,9 @@ ANDROID_TOOLS = """
 - get_volume: Get current volume
 - set_volume [level 0-15]: Set volume
 - get_wifi: Get WiFi info
+- describe_screen: Describe what app/screen is currently showing
+- read_screen: Read all text visible on screen
+- analyze_screen [question]: Answer a specific question about what's on screen
 """ if IS_ANDROID else ""
 
 WINDOWS_TOOLS = """
@@ -116,6 +126,12 @@ Examples:
 - "search emails about fees" → {{"tool": "search_emails", "params": {{"query": "fees"}}, "confidence": "high"}}
 - "read first email" → {{"tool": "read_email_content", "params": {{"index": 0}}, "confidence": "high"}}
 - "list my contacts" → {{"tool": "list_contacts", "params": {{}}, "confidence": "high"}}
+- "what's on my screen" → {{"tool": "describe_screen", "params": {{}}, "confidence": "high"}}
+- "read my screen" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
+- "what app is open" → {{"tool": "describe_screen", "params": {{}}, "confidence": "high"}}
+- "read that notification" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
+- "what does my screen say" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
+- "is there a deadline on screen" → {{"tool": "analyze_screen", "params": {{"question": "is there a deadline or due date visible"}}, "confidence": "high"}}
 - "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
 
 Respond with JSON only, no other text."""
@@ -172,6 +188,13 @@ def execute_tool(tool: str, params: dict) -> str | None:
             level = params.get("level", 50)
             subprocess.run(["termux-volume", "music", str(level)])
             return f"Volume set to {level}"
+        if tool == "describe_screen":
+            return describe_screen()
+        if tool == "read_screen":
+            return read_screen()
+        if tool == "analyze_screen":
+            question = params.get("question", "What is on this screen?")
+            return analyze_screen_with_question(question)
 
     # Cross-platform tools
     if tool == "play_pause":

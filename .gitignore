@@ -51,3 +51,12 @@ desktop.ini
 # === VSCODE ===
 .vscode/
 *.code-workspace
+
+google_credentials.json
+Keys.txt
+memory/chroma_store/
+memory/categories.json
+memory/app_index.json
+memory/.spotify_cache
+memory/google_token_main.json
+memory/google_token_college.json

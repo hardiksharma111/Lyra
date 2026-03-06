@@ -104,6 +104,4 @@ def describe_screen() -> str:
 
 def analyze_screen_with_question(question: str) -> str:
     """Answer a specific question about what's on screen."""
-    return analyze_screen(f"Look at this screenshot and answer this question: {question}")git add .
-git commit -m "session 3 - computer vision via groq"
-git push
+    return analyze_screen(f"Look at this screenshot and answer this question: {question}")

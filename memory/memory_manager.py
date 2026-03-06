@@ -3,18 +3,15 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import json
-import numpy as np
-from sentence_transformers import SentenceTransformer
+import re
 from datetime import datetime
 
 # Detect platform
 IS_ANDROID = os.path.exists("/data/data/com.termux")
 
 print("Loading memory system...")
-encoder = SentenceTransformer('all-MiniLM-L6-v2')
 
 if IS_ANDROID:
-    # Lightweight JSON + numpy vector store
     MEMORY_DIR = "memory"
     CONV_FILE = os.path.join(MEMORY_DIR, "conversations.json")
     PATT_FILE = os.path.join(MEMORY_DIR, "patterns.json")
@@ -30,49 +27,43 @@ if IS_ANDROID:
         with open(path, "w") as f:
             json.dump(data, f)
 
-    def _cosine_search(query_vec, entries, limit):
-        if not entries:
-            return []
-        vecs = np.array([e["embedding"] for e in entries], dtype=np.float32)
-        q = np.array(query_vec, dtype=np.float32)
-        q /= np.linalg.norm(q) + 1e-10
-        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-10
-        scores = vecs @ q
-        top = np.argsort(scores)[::-1][:limit]
-        return [entries[i] for i in top]
+    def _keyword_search(query, entries, key, limit):
+        query_words = set(re.findall(r'\w+', query.lower()))
+        scored = []
+        for e in entries:
+            text_words = set(re.findall(r'\w+', e.get(key, "").lower()))
+            score = len(query_words & text_words)
+            if score > 0:
+                scored.append((score, e))
+        scored.sort(reverse=True)
+        return [e for _, e in scored[:limit]]
 
     def store_conversation(role: str, message: str):
         data = _load(CONV_FILE)
         data.append({
-            "id": f"{role}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
             "role": role,
             "message": message,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "embedding": encoder.encode(message).tolist()
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         _save(CONV_FILE, data)
 
     def store_pattern(pattern: str, category: str):
         data = _load(PATT_FILE)
         data.append({
-            "id": f"pattern_{category}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
             "category": category,
             "pattern": pattern,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "embedding": encoder.encode(pattern).tolist()
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         _save(PATT_FILE, data)
 
     def recall_relevant(query: str, limit: int = 5) -> list:
         data = _load(CONV_FILE)
-        q = encoder.encode(query).tolist()
-        results = _cosine_search(q, data, limit)
+        results = _keyword_search(query, data, "message", limit)
         return [{"message": e["message"], "role": e["role"], "timestamp": e["timestamp"]} for e in results]
 
     def recall_patterns(query: str, limit: int = 3) -> list:
         data = _load(PATT_FILE)
-        q = encoder.encode(query).tolist()
-        results = _cosine_search(q, data, limit)
+        results = _keyword_search(query, data, "pattern", limit)
         return [e["pattern"] for e in results]
 
     def get_memory_stats() -> dict:
@@ -82,9 +73,12 @@ if IS_ANDROID:
         }
 
 else:
-    # PC — original ChromaDB
+    # PC — ChromaDB with sentence transformers
     import chromadb
+    from sentence_transformers import SentenceTransformer
+
     client = chromadb.PersistentClient(path="memory/chroma_store")
+    encoder = SentenceTransformer('all-MiniLM-L6-v2')
     conversations = client.get_or_create_collection(name="conversations")
     patterns = client.get_or_create_collection(name="patterns")
 

@@ -1,32 +1,48 @@
-# API keys and sensitive files
+# === KEYS + SECRETS ===
 Keys.txt
-*.env
-.env
-api_keys.txt
-
-# Personal data logs
-logs/conversation_log.json
-logs/action_log.json
-logs/session_log.json
-
-# Memory data — personal and private
-memory/chroma_store/
-memory/categories.json
-
-# Future sensitive files
-memory/*.json
 *.key
 *.pem
 secrets.txt
+.env
 
-# Python cache
+# === MEMORY (personal data) ===
+memory/chroma_store/
+memory/categories.json
+memory/app_index.json
+memory/.spotify_cache
+memory/learned_devices.json
+memory/*.json
+
+# === CACHE + JUNK FILES ===
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
 
-# VS Code settings
-.vscode/
+# === LOGS (personal session data) ===
+logs/*.json
+logs/*.log
 
-# OS files
+# === EXECUTABLES ===
+*.exe
+nircmdc.exe
+nircmd.exe
+
+# === RANDOM FILES ===
+str
+spotipy.Spotify
+*.tmp
+*.temp
+
+# === OS FILES ===
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# === VSCODE ===
+.vscode/
+*.code-workspace

@@ -25,11 +25,8 @@ if IS_ANDROID:
         os.system(f'termux-tts-speak "{text}"')
 
     def listen():
-        # Placeholder — Whisper voice input comes in Session 2
-        return input("You (voice): ").strip()
+        return input("You: ").strip()
 
-    def wait_for_wakeword():
-        input("Press Enter to activate voice...")
 else:
     from voice import speak, listen
     from voice.wakeword import wait_for_wakeword
@@ -75,8 +72,6 @@ def main():
             cats = get_all_categories()
             safe_print(f"Current categories: {', '.join(cats)}\n")
             return False
-
-        safe_print(f"You: {user_input}")
 
         tool_result, should_exit_now = handle_tool(user_input)
 
@@ -136,8 +131,10 @@ def main():
                 time.sleep(1)
                 continue
 
-    voice_thread = threading.Thread(target=voice_loop, daemon=True)
-    voice_thread.start()
+    # Voice thread only on Windows — Android gets voice in Session 2 with Whisper
+    if IS_WINDOWS:
+        voice_thread = threading.Thread(target=voice_loop, daemon=True)
+        voice_thread.start()
 
     while not should_exit[0]:
         try:

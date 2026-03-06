@@ -35,7 +35,7 @@ if IS_ANDROID:
             score = len(query_words & text_words)
             if score > 0:
                 scored.append((score, e))
-        scored.sort(reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)
         return [e for _, e in scored[:limit]]
 
     def store_conversation(role: str, message: str):

@@ -1,16 +1,38 @@
+import os
+import sys
+import time
+import threading
+from threading import Lock
+
+# Platform detection first — before any other imports
+from core.platform import IS_ANDROID, IS_WINDOWS
+
+os.system('cls' if os.name == 'nt' else 'clear')
+
 from core.agent import Agent
-from voice import speak, listen
-from voice.wakeword import wait_for_wakeword
 from logs.session import start_session, end_session
 from memory.pattern_engine import print_profile, get_all_categories
 from tools.tool_handler import handle_tool
-from tools.system_controls import build_app_index
-import threading
-import time
-import os
-from threading import Lock
 
-os.system('cls' if os.name == 'nt' else 'clear')
+# Windows-only imports
+if IS_WINDOWS:
+    from tools.system_controls import build_app_index
+    from voice.wakeword import wait_for_wakeword
+
+# Voice — different on Android vs PC
+if IS_ANDROID:
+    def speak(text):
+        os.system(f'termux-tts-speak "{text}"')
+
+    def listen():
+        # Placeholder — Whisper voice input comes in Session 2
+        return input("You (voice): ").strip()
+
+    def wait_for_wakeword():
+        input("Press Enter to activate voice...")
+else:
+    from voice import speak, listen
+    from voice.wakeword import wait_for_wakeword
 
 ERROR_RESPONSES = [
     "I couldn't understand that",
@@ -35,9 +57,10 @@ def main():
 
     safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
     safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
+    safe_print(f"Platform: {'Android' if IS_ANDROID else 'Windows'}")
     safe_print("-" * 50)
 
-    if not os.path.exists("memory/app_index.json"):
+    if IS_WINDOWS and not os.path.exists("memory/app_index.json"):
         build_app_index()
 
     def handle_input(user_input: str) -> bool:
@@ -104,7 +127,8 @@ def main():
                     if exiting:
                         return
 
-                    safe_print("Say 'blueberry' to speak again.")
+                    if not IS_ANDROID:
+                        safe_print("Say 'blueberry' to speak again.")
                     break
 
             except Exception as e:

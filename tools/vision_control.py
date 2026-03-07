@@ -6,8 +6,8 @@ import time
 from groq import Groq
 
 VISION_MODEL = "llama-3.2-90b-vision-preview"
-COMMAND_FILE = "/data/data/com.termux/files/home/lyra_cmd.json"
-RESULT_FILE = "/data/data/com.termux/files/home/lyra_result.json"
+COMMAND_FILE = "/sdcard/lyra_cmd.json"
+RESULT_FILE = "/sdcard/lyra_result.json"
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:

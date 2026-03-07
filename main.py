@@ -188,6 +188,10 @@ def main():
                             if text:
                                 safe_print(f"[Flutter] {text}")
                                 handle_input(text)
+                    activity_events = data.get("activity_events", [])
+                    if activity_events:
+                        from tools.activity_log import append_events
+                        append_events(activity_events)
                 except Exception:
                     pass
                 time.sleep(1)  # Poll every second

@@ -3,7 +3,6 @@ from groq import Groq
 import json
 import re
 
-# Windows-only tools
 if IS_WINDOWS:
     from tools.system_controls import (
         get_system_status, get_battery, get_brightness,
@@ -12,14 +11,16 @@ if IS_WINDOWS:
         open_app, set_volume
     )
 
-# Android-only tools
 if IS_ANDROID:
     from tools.vision_control import (
         analyze_screen, read_screen, describe_screen,
         analyze_screen_with_question
     )
+    from tools.activity_log import (
+        what_was_i_doing, check_notifications,
+        get_whatsapp_messages, send_whatsapp, last_app_opened
+    )
 
-# Cross-platform tools
 from tools.spotify_control import (
     play_pause, next_track, previous_track, get_current_track,
     play_song, play_artist, play_playlist,
@@ -45,15 +46,16 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
-# Android-only system tools
 ANDROID_TOOLS = """
 - get_battery: Get battery percentage
-- get_volume: Get current volume
-- set_volume [level 0-15]: Set volume
-- get_wifi: Get WiFi info
 - describe_screen: Describe what app/screen is currently showing
 - read_screen: Read all text visible on screen
 - analyze_screen [question]: Answer a specific question about what's on screen
+- what_was_i_doing [minutes]: What was I doing in the past X minutes (default 60)
+- last_app_opened: What was the last app I opened
+- check_notifications [app] [minutes]: Check recent notifications, optionally filtered by app
+- get_whatsapp_messages [minutes]: Read recent WhatsApp messages from notifications
+- send_whatsapp [contact] [message]: Send a WhatsApp message to someone
 """ if IS_ANDROID else ""
 
 WINDOWS_TOOLS = """
@@ -120,18 +122,21 @@ Examples:
 - "play something chill" → {{"tool": "play_by_mood", "params": {{"mood": "chill"}}, "confidence": "high"}}
 - "next song" → {{"tool": "next_track", "params": {{}}, "confidence": "high"}}
 - "check my emails" → {{"tool": "get_recent_emails", "params": {{"account": "main"}}, "confidence": "high"}}
-- "check my college emails" → {{"tool": "get_recent_emails", "params": {{"account": "college"}}, "confidence": "high"}}
 - "what assignments do i have" → {{"tool": "get_assignments", "params": {{}}, "confidence": "high"}}
-- "what courses am i taking" → {{"tool": "get_courses", "params": {{}}, "confidence": "high"}}
-- "search emails about fees" → {{"tool": "search_emails", "params": {{"query": "fees"}}, "confidence": "high"}}
-- "read first email" → {{"tool": "read_email_content", "params": {{"index": 0}}, "confidence": "high"}}
-- "list my contacts" → {{"tool": "list_contacts", "params": {{}}, "confidence": "high"}}
 - "what's on my screen" → {{"tool": "describe_screen", "params": {{}}, "confidence": "high"}}
 - "read my screen" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
-- "what app is open" → {{"tool": "describe_screen", "params": {{}}, "confidence": "high"}}
-- "read that notification" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
-- "what does my screen say" → {{"tool": "read_screen", "params": {{}}, "confidence": "high"}}
-- "is there a deadline on screen" → {{"tool": "analyze_screen", "params": {{"question": "is there a deadline or due date visible"}}, "confidence": "high"}}
+- "what was i doing" → {{"tool": "what_was_i_doing", "params": {{"minutes": 60}}, "confidence": "high"}}
+- "what did i do last hour" → {{"tool": "what_was_i_doing", "params": {{"minutes": 60}}, "confidence": "high"}}
+- "what was i doing 2 hours ago" → {{"tool": "what_was_i_doing", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "last app i opened" → {{"tool": "last_app_opened", "params": {{}}, "confidence": "high"}}
+- "what app did i open before" → {{"tool": "last_app_opened", "params": {{}}, "confidence": "high"}}
+- "check my notifications" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
+- "any whatsapp messages" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "did anyone message me" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
+- "whatsapp messages from rahul" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "send rahul hey on whatsapp" → {{"tool": "send_whatsapp", "params": {{"contact": "rahul", "message": "hey"}}, "confidence": "high"}}
+- "tell priya i'm coming" → {{"tool": "send_whatsapp", "params": {{"contact": "priya", "message": "I'm coming"}}, "confidence": "high"}}
+- "message john that i'll be late" → {{"tool": "send_whatsapp", "params": {{"contact": "john", "message": "I'll be late"}}, "confidence": "high"}}
 - "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
 
 Respond with JSON only, no other text."""
@@ -141,105 +146,69 @@ Respond with JSON only, no other text."""
         result = response.choices[0].message.content.strip()
         result = re.sub(r'```json|```', '', result).strip()
         return json.loads(result)
-    except Exception as e:
+    except Exception:
         return {"tool": "none", "params": {}, "confidence": "low"}
 
 def execute_tool(tool: str, params: dict) -> str | None:
     if tool == "none" or not tool:
         return None
 
-    # Windows-only tools
     if IS_WINDOWS:
-        if tool == "get_system_status":
-            return get_system_status()
-        if tool == "get_battery":
-            return get_battery()
-        if tool == "get_brightness":
-            return str(get_brightness()) + "% brightness"
-        if tool == "set_brightness":
-            return set_brightness(params.get("level", 50))
-        if tool == "volume_up":
-            return volume_up(params.get("steps", 5))
-        if tool == "volume_down":
-            return volume_down(params.get("steps", 5))
-        if tool == "set_volume":
-            return set_volume(params.get("level", 50))
-        if tool == "mute_volume":
-            return mute_volume()
-        if tool == "unmute_volume":
-            return unmute_volume()
-        if tool == "lock_screen":
-            return lock_screen()
-        if tool == "shutdown":
-            return shutdown(params.get("seconds", 30))
-        if tool == "cancel_shutdown":
-            return cancel_shutdown()
-        if tool == "open_app":
-            return open_app(params.get("app_name", ""))
+        if tool == "get_system_status": return get_system_status()
+        if tool == "get_battery": return get_battery()
+        if tool == "get_brightness": return str(get_brightness()) + "% brightness"
+        if tool == "set_brightness": return set_brightness(params.get("level", 50))
+        if tool == "volume_up": return volume_up(params.get("steps", 5))
+        if tool == "volume_down": return volume_down(params.get("steps", 5))
+        if tool == "set_volume": return set_volume(params.get("level", 50))
+        if tool == "mute_volume": return mute_volume()
+        if tool == "unmute_volume": return unmute_volume()
+        if tool == "lock_screen": return lock_screen()
+        if tool == "shutdown": return shutdown(params.get("seconds", 30))
+        if tool == "cancel_shutdown": return cancel_shutdown()
+        if tool == "open_app": return open_app(params.get("app_name", ""))
 
-    # Android system tools
     if IS_ANDROID:
         if tool == "get_battery":
             import subprocess
             result = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
             return result.stdout.strip()
-        if tool == "set_volume":
-            import subprocess
-            level = params.get("level", 50)
-            subprocess.run(["termux-volume", "music", str(level)])
-            return f"Volume set to {level}"
-        if tool == "describe_screen":
-            return describe_screen()
-        if tool == "read_screen":
-            return read_screen()
+        if tool == "describe_screen": return describe_screen()
+        if tool == "read_screen": return read_screen()
         if tool == "analyze_screen":
-            question = params.get("question", "What is on this screen?")
-            return analyze_screen_with_question(question)
+            return analyze_screen_with_question(params.get("question", "What is on this screen?"))
+        if tool == "what_was_i_doing":
+            return what_was_i_doing(params.get("minutes", 60))
+        if tool == "last_app_opened":
+            return last_app_opened()
+        if tool == "check_notifications":
+            return check_notifications(params.get("app"), params.get("minutes", 60))
+        if tool == "get_whatsapp_messages":
+            return get_whatsapp_messages(params.get("minutes", 120))
+        if tool == "send_whatsapp":
+            return send_whatsapp(params.get("contact", ""), params.get("message", ""))
 
-    # Cross-platform tools
-    if tool == "play_pause":
-        return play_pause()
-    if tool == "next_track":
-        return next_track()
-    if tool == "previous_track":
-        return previous_track()
-    if tool == "get_current_track":
-        return get_current_track()
-    if tool == "play_song":
-        return play_song(params.get("song", params.get("query", "")))
-    if tool == "play_artist":
-        return play_artist(params.get("artist", ""))
-    if tool == "play_playlist":
-        return play_playlist(params.get("playlist", ""))
-    if tool == "spotify_volume":
-        return spotify_volume(params.get("level", 50))
-    if tool == "play_by_mood":
-        return play_by_mood(params.get("mood", "chill"))
-    if tool == "get_user_playlists":
-        return get_user_playlists()
-    if tool == "list_contacts":
-        return list_contacts()
-    if tool == "save_contact":
-        return save_contact(params.get("name", ""), params.get("number", ""))
+    # Cross-platform
+    if tool == "play_pause": return play_pause()
+    if tool == "next_track": return next_track()
+    if tool == "previous_track": return previous_track()
+    if tool == "get_current_track": return get_current_track()
+    if tool == "play_song": return play_song(params.get("song", params.get("query", "")))
+    if tool == "play_artist": return play_artist(params.get("artist", ""))
+    if tool == "play_playlist": return play_playlist(params.get("playlist", ""))
+    if tool == "spotify_volume": return spotify_volume(params.get("level", 50))
+    if tool == "play_by_mood": return play_by_mood(params.get("mood", "chill"))
+    if tool == "get_user_playlists": return get_user_playlists()
+    if tool == "list_contacts": return list_contacts()
+    if tool == "save_contact": return save_contact(params.get("name", ""), params.get("number", ""))
     if tool == "get_recent_emails":
-        return get_recent_emails(
-            account=params.get("account", "main"),
-            context=params.get("context", "")
-        )
+        return get_recent_emails(account=params.get("account", "main"), context=params.get("context", ""))
     if tool == "read_email_content":
-        return read_email_content(
-            index=params.get("index", 0),
-            account=params.get("account", None)
-        )
+        return read_email_content(index=params.get("index", 0), account=params.get("account", None))
     if tool == "search_emails":
-        return search_emails(
-            query=params.get("query", ""),
-            account=params.get("account", None)
-        )
-    if tool == "get_assignments":
-        return get_assignments()
-    if tool == "get_courses":
-        return get_courses()
+        return search_emails(query=params.get("query", ""), account=params.get("account", None))
+    if tool == "get_assignments": return get_assignments()
+    if tool == "get_courses": return get_courses()
 
     return None
 

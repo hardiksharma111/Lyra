@@ -4,7 +4,6 @@ import time
 import threading
 from threading import Lock
 
-# Platform detection first — before any other imports
 from core.platform import IS_ANDROID, IS_WINDOWS
 
 os.system('cls' if os.name == 'nt' else 'clear')
@@ -14,15 +13,24 @@ from logs.session import start_session, end_session
 from memory.pattern_engine import print_profile, get_all_categories
 from tools.tool_handler import handle_tool
 
-# Windows-only imports
 if IS_WINDOWS:
     from tools.system_controls import build_app_index
     from voice.wakeword import wait_for_wakeword
 
-# Voice — different on Android vs PC
 if IS_ANDROID:
-    def speak(text):
-        os.system(f'termux-tts-speak "{text}"')
+    import requests
+
+    FLUTTER_URL = "http://127.0.0.1:5001/command"
+
+    def push_to_flutter(action: str, text: str = ""):
+        """Send response to Flutter app to display + speak."""
+        try:
+            requests.post(FLUTTER_URL, json={"action": action, "text": text}, timeout=5)
+        except Exception:
+            pass  # Flutter not open — silently ignore
+
+    def speak(text: str):
+        push_to_flutter("speak", text)
 
     def listen():
         return input("You: ").strip()
@@ -52,10 +60,17 @@ def main():
     agent.set_session(session_id)
     should_exit = [False]
 
-    safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
-    safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
-    safe_print(f"Platform: {'Android' if IS_ANDROID else 'Windows'}")
-    safe_print("-" * 50)
+    # On Android: minimal startup output, Termux is background brain
+    if IS_ANDROID:
+        safe_print("[Session started]")
+        safe_print("Platform: Android")
+        safe_print("Lyra ready. Type below.")
+        safe_print("-" * 40)
+    else:
+        safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
+        safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
+        safe_print(f"Platform: Windows")
+        safe_print("-" * 50)
 
     if IS_WINDOWS and not os.path.exists("memory/app_index.json"):
         build_app_index()
@@ -76,20 +91,32 @@ def main():
         tool_result, should_exit_now = handle_tool(user_input)
 
         if should_exit_now:
-            safe_print("Lyra: Goodbye.\n")
-            speak("Goodbye.")
+            if IS_ANDROID:
+                push_to_flutter("speak", "Goodbye.")
+            else:
+                safe_print("Lyra: Goodbye.\n")
+                speak("Goodbye.")
             end_session(session_id)
             should_exit[0] = True
             return True
 
         if tool_result:
-            safe_print(f"Lyra: {tool_result}\n")
-            speak(tool_result)
+            if IS_ANDROID:
+                # Show in Flutter UI + speak via Flutter TTS
+                push_to_flutter("speak", tool_result)
+            else:
+                safe_print(f"Lyra: {tool_result}\n")
+                speak(tool_result)
             return False
 
         response = agent.think(user_input)
-        safe_print(f"Lyra: {response}\n")
-        speak(response)
+
+        if IS_ANDROID:
+            push_to_flutter("speak", response)
+        else:
+            safe_print(f"Lyra: {response}\n")
+            speak(response)
+
         return False
 
     def voice_loop():
@@ -131,10 +158,35 @@ def main():
                 time.sleep(1)
                 continue
 
-    # Voice thread only on Windows — Android gets voice in Session 2 with Whisper
     if IS_WINDOWS:
         voice_thread = threading.Thread(target=voice_loop, daemon=True)
         voice_thread.start()
+
+    # On Android: also poll Flutter for messages typed in the app UI
+    if IS_ANDROID:
+        def flutter_poll_loop():
+            """Pick up messages typed in Flutter app and process them."""
+            while not should_exit[0]:
+                try:
+                    resp = requests.post(
+                        FLUTTER_URL,
+                        json={"action": "get_outbox"},
+                        timeout=5
+                    )
+                    data = resp.json()
+                    messages = data.get("messages", [])
+                    for msg in messages:
+                        if msg.get("type") == "user_message":
+                            text = msg.get("text", "").strip()
+                            if text:
+                                safe_print(f"[Flutter] {text}")
+                                handle_input(text)
+                except Exception:
+                    pass
+                time.sleep(1)  # Poll every second
+
+        poll_thread = threading.Thread(target=flutter_poll_loop, daemon=True)
+        poll_thread.start()
 
     while not should_exit[0]:
         try:
@@ -143,6 +195,8 @@ def main():
                 exiting = handle_input(user_input)
                 if exiting:
                     break
+        except (EOFError, KeyboardInterrupt):
+            break
         except Exception as e:
             safe_print(f"Error: {e}")
             continue

@@ -5,12 +5,10 @@ from logs.session import log_topic
 from memory.memory_manager import store_conversation
 from memory.pattern_engine import analyze_and_store
 from memory.context_builder import build_context
+from core.platform import IS_ANDROID
 
 MODEL = "llama-3.3-70b-versatile"
 MAX_HISTORY = 30
-
-# Developer+ debug flag — set True to see memory/pattern prints
-# Phase 5 RBAC will control this per user tier automatically
 DEBUG_MODE = False
 
 def _load_key(name: str) -> str:
@@ -22,14 +20,20 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
-class Agent:
-    def __init__(self):
-        self.conversation_history = []
-        self.model = MODEL
-        self.session_id = None
-        self.is_first_message = True
-        self.debug = DEBUG_MODE
-        self.system_prompt = """Your name is Lyra. You are a personal AI assistant and companion built specifically for your creator Hardik.
+ANDROID_CAPABILITIES = """
+You are running on Hardik's Android phone with the following active capabilities:
+- Screen reading: You CAN read whatever app is currently on his screen using accessibility service
+- Notifications: You CAN see all notifications he receives in real time
+- Activity log: You CAN tell him what apps he opened and when, going back hours
+- WhatsApp: You CAN read his WhatsApp notifications and send messages on his behalf
+- Spotify: You CAN control music playback
+- Gmail + Classroom: You CAN read emails and assignments
+
+When Hardik asks about his screen, notifications, messages, or recent activity — use the tools, don't say you can't.
+Never say "I can't see your screen" or "I don't have access" — you do have access on Android.
+""" if IS_ANDROID else ""
+
+BASE_PROMPT = """Your name is Lyra. You are a personal AI assistant and companion built specifically for your creator Hardik.
 You know Hardik well and speak to him like a close friend — casual, warm, direct.
 Never introduce yourself unless it is the very first message of a conversation.
 Never say your name mid conversation unless directly asked.
@@ -41,18 +45,25 @@ No bullet points, no markdown, no asterisks, no numbered lists.
 If you cannot do something yet like send texts or control apps, say so briefly and move on.
 Never ask unnecessary clarifying questions — use your memory and make reasonable assumptions."""
 
+class Agent:
+    def __init__(self):
+        self.conversation_history = []
+        self.model = MODEL
+        self.session_id = None
+        self.is_first_message = True
+        self.debug = DEBUG_MODE
+        self.system_prompt = BASE_PROMPT + ("\n\n" + ANDROID_CAPABILITIES if ANDROID_CAPABILITIES else "")
+
     def set_session(self, session_id: int):
         self.session_id = session_id
 
     def set_debug(self, enabled: bool):
-        """Toggle debug mode — developer+ only."""
         self.debug = enabled
 
     def think(self, user_input: str) -> str:
-        # Toggle debug via command
         if user_input.strip().lower() == "debug on":
             self.set_debug(True)
-            return "Debug mode enabled. Memory and pattern logs visible."
+            return "Debug mode enabled."
         if user_input.strip().lower() == "debug off":
             self.set_debug(False)
             return "Debug mode disabled."
@@ -63,7 +74,7 @@ Never ask unnecessary clarifying questions — use your memory and make reasonab
         context = build_context(user_input)
 
         if self.debug and context:
-            print(f"[Debug] Context injected:\n{context}")
+            print(f"[Debug] Context:\n{context}")
 
         messages = [{"role": "system", "content": self.system_prompt}]
 
@@ -94,13 +105,11 @@ Never ask unnecessary clarifying questions — use your memory and make reasonab
             confidence="HIGH"
         )
 
-        # Learn patterns — only print in debug mode
         learned = analyze_and_store(user_input)
         if self.debug and learned:
             for item in learned:
                 print(f"[Debug Memory: {item['category']} - {item['pattern']}]")
 
-        # Topic detection — local, no API call
         if self.session_id:
             topic = self._detect_topic_local(user_input)
             if topic:
@@ -108,16 +117,9 @@ Never ask unnecessary clarifying questions — use your memory and make reasonab
                 if self.debug:
                     print(f"[Debug Topic: {topic}]")
 
-        self.conversation_history.append({
-            "role": "user",
-            "content": user_input
-        })
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": agent_response
-        })
+        self.conversation_history.append({"role": "user", "content": user_input})
+        self.conversation_history.append({"role": "assistant", "content": agent_response})
 
-        # Cap history to prevent context limit crashes
         if len(self.conversation_history) > MAX_HISTORY * 2:
             self.conversation_history = self.conversation_history[-(MAX_HISTORY * 2):]
 
@@ -125,7 +127,6 @@ Never ask unnecessary clarifying questions — use your memory and make reasonab
         return agent_response
 
     def _detect_topic_local(self, user_input: str) -> str:
-        """Detect topic locally without API call."""
         stop_words = {
             "i", "me", "my", "you", "your", "the", "a", "an", "is", "are",
             "was", "were", "be", "been", "being", "have", "has", "had", "do",
@@ -141,17 +142,13 @@ Never ask unnecessary clarifying questions — use your memory and make reasonab
             "some", "such", "only", "own", "same", "too", "hey", "hi",
             "hello", "ok", "okay", "yeah", "yep", "nah", "nope", "please",
             "thanks", "thank", "like", "really", "actually", "gonna", "wanna",
-            "gotta", "kinda", "dont", "im", "ive", "whats", "thats",
+            "gotta", "kinda", "dont", "im", "ive", "whats", "thats", "u", "ur",
         }
-
         words = re.findall(r'\w+', user_input.lower())
         meaningful = [w for w in words if w not in stop_words and len(w) > 2]
-
         if not meaningful:
             return None
-
-        topic = " ".join(meaningful[:2])
-        return topic if topic else None
+        return " ".join(meaningful[:2]) or None
 
     def _clean_response(self, text: str) -> str:
         text = re.sub(r'\*+', '', text)

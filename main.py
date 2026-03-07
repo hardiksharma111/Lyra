@@ -92,12 +92,17 @@ def main():
 
         if should_exit_now:
             if IS_ANDROID:
-                push_to_flutter("speak", "Goodbye.")
+                push_to_flutter("speak", "Goodbye. Starting new session...")
+                end_session(session_id)
+                should_exit[0] = True
+                # On Android: restart instead of killing — keeps Termux alive
+                import subprocess
+                subprocess.Popen(["python", "main.py"])
             else:
                 safe_print("Lyra: Goodbye.\n")
                 speak("Goodbye.")
-            end_session(session_id)
-            should_exit[0] = True
+                end_session(session_id)
+                should_exit[0] = True
             return True
 
         if tool_result:

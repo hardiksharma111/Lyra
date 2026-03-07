@@ -4,8 +4,20 @@ import requests
 from groq import Groq
 
 FLUTTER_URL = "http://127.0.0.1:5001/command"
-ACTIVITY_LOG = "/sdcard/lyra_activity.json"
-NOTIF_LOG = "/sdcard/lyra_notifications.json"
+ACTIVITY_LOG_PATHS = [
+    "/sdcard/lyra_activity.json",
+    "/data/data/com.example.lyra_app/files/lyra_activity.json"
+]
+NOTIF_LOG_PATHS = [
+    "/sdcard/lyra_notifications.json",
+    "/data/data/com.example.lyra_app/files/lyra_notifications.json"
+]
+
+def _find_log(paths: list) -> str | None:
+    for p in paths:
+        if os.path.exists(p) and os.path.getsize(p) > 2:
+            return p
+    return None
 REQUEST_TIMEOUT = 10
 
 def _load_key(name: str) -> str:
@@ -27,11 +39,12 @@ def _send_command(command: dict) -> dict:
 # ─── Activity Log ─────────────────────────────────────────────────────────────
 
 def get_activity_log(limit_minutes: int = 60) -> list:
-    """Read activity log directly from file (faster than going through Flutter)."""
+    """Read activity log directly from file."""
     try:
-        if not os.path.exists(ACTIVITY_LOG):
+        path = _find_log(ACTIVITY_LOG_PATHS)
+        if not path:
             return []
-        with open(ACTIVITY_LOG, "r") as f:
+        with open(path, "r") as f:
             entries = json.load(f)
         import time
         cutoff = (time.time() * 1000) - (limit_minutes * 60 * 1000)
@@ -42,9 +55,10 @@ def get_activity_log(limit_minutes: int = 60) -> list:
 def get_notifications(limit_minutes: int = 60, app_filter: str = None) -> list:
     """Read notification log directly from file."""
     try:
-        if not os.path.exists(NOTIF_LOG):
+        path = _find_log(NOTIF_LOG_PATHS)
+        if not path:
             return []
-        with open(NOTIF_LOG, "r") as f:
+        with open(path, "r") as f:
             entries = json.load(f)
         import time
         cutoff = (time.time() * 1000) - (limit_minutes * 60 * 1000)

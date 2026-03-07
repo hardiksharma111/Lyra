@@ -107,11 +107,13 @@ def main():
 
         if tool_result:
             if IS_ANDROID:
-                # Show in Flutter UI + speak via Flutter TTS
-                push_to_flutter("speak", tool_result)
+                # Let agent wrap the tool result in a natural response
+                response = agent.think(user_input, tool_result=tool_result)
+                push_to_flutter("speak", response)
             else:
-                safe_print(f"Lyra: {tool_result}\n")
-                speak(tool_result)
+                response = agent.think(user_input, tool_result=tool_result)
+                safe_print(f"Lyra: {response}\n")
+                speak(response)
             return False
 
         response = agent.think(user_input)

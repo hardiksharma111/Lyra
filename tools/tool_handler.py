@@ -131,12 +131,20 @@ Examples:
 - "last app i opened" → {{"tool": "last_app_opened", "params": {{}}, "confidence": "high"}}
 - "what app did i open before" → {{"tool": "last_app_opened", "params": {{}}, "confidence": "high"}}
 - "check my notifications" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
-- "any whatsapp messages" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "any notifications" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
 - "did anyone message me" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
+- "any whatsapp messages" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "check my whatsapp" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "whatsapp texts" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "latest message on whatsapp" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "who messaged me on whatsapp" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
+- "who sent me a message" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
 - "whatsapp messages from rahul" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
 - "send rahul hey on whatsapp" → {{"tool": "send_whatsapp", "params": {{"contact": "rahul", "message": "hey"}}, "confidence": "high"}}
+- "send message to om saying hi" → {{"tool": "send_whatsapp", "params": {{"contact": "om", "message": "hi"}}, "confidence": "high"}}
 - "tell priya i'm coming" → {{"tool": "send_whatsapp", "params": {{"contact": "priya", "message": "I'm coming"}}, "confidence": "high"}}
 - "message john that i'll be late" → {{"tool": "send_whatsapp", "params": {{"contact": "john", "message": "I'll be late"}}, "confidence": "high"}}
+- "text om hi" → {{"tool": "send_whatsapp", "params": {{"contact": "om", "message": "hi"}}, "confidence": "high"}}
 - "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
 
 Respond with JSON only, no other text."""

@@ -60,7 +60,7 @@ class Agent:
     def set_debug(self, enabled: bool):
         self.debug = enabled
 
-    def think(self, user_input: str) -> str:
+    def think(self, user_input: str, tool_result: str = None) -> str:
         if user_input.strip().lower() == "debug on":
             self.set_debug(True)
             return "Debug mode enabled."
@@ -82,6 +82,14 @@ class Agent:
             messages.append({
                 "role": "system",
                 "content": f"Memory context — use this to personalize your response:\n{context}"
+            })
+
+        # If a tool already fetched real data, inject it so the agent uses it
+        # and cannot hallucinate a "I can't do that" response
+        if tool_result:
+            messages.append({
+                "role": "system",
+                "content": f"TOOL RESULT — this is real live data you just fetched. Use it directly to answer the user. Do NOT say you can't access this — you already did:\n\n{tool_result}"
             })
 
         messages.extend(self.conversation_history)

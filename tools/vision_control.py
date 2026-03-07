@@ -1,12 +1,13 @@
 import os
-import subprocess
-import base64
+import socket
 import json
+import base64
 import re
 from groq import Groq
 
 VISION_MODEL = "llama-3.2-90b-vision-preview"
-SCREENSHOT_PATH = os.path.expanduser("~/screenshot_temp.png")
+FLUTTER_HOST = "127.0.0.1"
+FLUTTER_PORT = 5001
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -17,34 +18,45 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
+def _send_command(command: dict) -> dict:
+    """Send command to Flutter app via socket and get response."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(15)
+        sock.connect((FLUTTER_HOST, FLUTTER_PORT))
+
+        message = json.dumps(command) + "\n"
+        sock.sendall(message.encode("utf-8"))
+
+        response_data = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response_data += chunk
+            if b"\n" in response_data:
+                break
+
+        sock.close()
+
+        response_text = response_data.decode("utf-8").strip()
+        if response_text:
+            return json.loads(response_text)
+        return {"status": "error", "message": "Empty response from Flutter"}
+
+    except ConnectionRefusedError:
+        return {"status": "error", "message": "Flutter app not running. Open Lyra app on phone first."}
+    except socket.timeout:
+        return {"status": "error", "message": "Flutter app timed out"}
+    except Exception as e:
+        return {"status": "error", "message": f"Socket error: {e}"}
+
 def take_screenshot() -> str:
-    """Take screenshot on Android. Returns path or None."""
-    # Clean up old screenshot
-    if os.path.exists(SCREENSHOT_PATH):
-        os.remove(SCREENSHOT_PATH)
-
-    # Method 1: termux-screenshot (needs Termux:API)
-    try:
-        result = subprocess.run(
-            ["termux-screenshot", SCREENSHOT_PATH],
-            capture_output=True, text=True, timeout=10
-        )
-        if os.path.exists(SCREENSHOT_PATH):
-            return SCREENSHOT_PATH
-    except Exception:
-        pass
-
-    # Method 2: screencap (built-in Android, may need root)
-    try:
-        result = subprocess.run(
-            ["screencap", "-p", SCREENSHOT_PATH],
-            capture_output=True, text=True, timeout=10
-        )
-        if os.path.exists(SCREENSHOT_PATH):
-            return SCREENSHOT_PATH
-    except Exception:
-        pass
-
+    """Request screenshot from Flutter app. Returns path or None."""
+    result = _send_command({"action": "screenshot"})
+    if result.get("status") == "ok":
+        return result.get("path")
+    print(f"[Vision] {result.get('message', 'Unknown error')}")
     return None
 
 def _image_to_base64(path: str) -> str:
@@ -53,10 +65,10 @@ def _image_to_base64(path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 def analyze_screen(prompt: str = None) -> str:
-    """Take screenshot and analyze with vision model."""
+    """Take screenshot via Flutter and analyze with vision model."""
     path = take_screenshot()
     if not path:
-        return "Couldn't take screenshot. Make sure Termux:API is installed — run: pkg install termux-api"
+        return "Couldn't take screenshot. Make sure the Lyra app is open on your phone."
 
     if not prompt:
         prompt = "Describe what is on this screen. Be concise and focus on the main content visible."
@@ -90,9 +102,12 @@ def analyze_screen(prompt: str = None) -> str:
     except Exception as e:
         return f"Vision error: {e}"
     finally:
-        # Always clean up screenshot after processing
+        # Clean up screenshot after processing
         if os.path.exists(path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
 def read_screen() -> str:
     """Read all visible text on screen."""

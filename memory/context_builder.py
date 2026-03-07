@@ -1,17 +1,6 @@
+import re
 from memory.memory_manager import recall_relevant, recall_patterns
 from memory.pattern_engine import get_all_categories
-from groq import Groq
-
-MODEL = "llama-3.3-70b-versatile"
-
-def _load_key(name: str) -> str:
-    with open("Keys.txt", "r") as f:
-        for line in f:
-            if line.startswith(name):
-                return line.split("=", 1)[1].strip()
-    raise ValueError(f"{name} key not found in Keys.txt")
-
-client = Groq(api_key=_load_key("GROQ"))
 
 def build_context(user_input: str) -> str:
     context_parts = []
@@ -25,7 +14,7 @@ def build_context(user_input: str) -> str:
                 f"  [{mem['role']} at {mem['timestamp']}]: {mem['message']}"
             )
 
-    # Collect all patterns first
+    # Collect all patterns
     categories = get_all_categories()
     all_patterns = []
     for category in categories:
@@ -33,9 +22,9 @@ def build_context(user_input: str) -> str:
         for p in patterns:
             all_patterns.append({"category": category, "pattern": p})
 
-    # ONE call to filter relevant patterns instead of one call per pattern
+    # Local relevance scoring — no API call
     if all_patterns:
-        relevant = _batch_relevance_check(user_input, all_patterns)
+        relevant = _local_relevance_check(user_input, all_patterns)
         if relevant:
             context_parts.append("\nKnown facts about the user:")
             for item in relevant:
@@ -46,50 +35,61 @@ def build_context(user_input: str) -> str:
 
     return "\n".join(context_parts)
 
-def _batch_relevance_check(user_input: str, patterns: list) -> list:
-    # ONE call checks all patterns at once instead of one call per pattern
+def _local_relevance_check(user_input: str, patterns: list) -> list:
+    """Score pattern relevance locally using keyword overlap.
+    No API call — fast, free, runs on any platform."""
+
     if not patterns:
         return []
 
-    patterns_text = "\n".join([
-        f"{i+1}. [{p['category']}]: {p['pattern']}"
-        for i, p in enumerate(patterns)
-    ])
+    # Extract meaningful words from user input
+    stop_words = {
+        "i", "me", "my", "you", "your", "the", "a", "an", "is", "are",
+        "was", "were", "be", "been", "being", "have", "has", "had", "do",
+        "does", "did", "will", "would", "could", "should", "can", "may",
+        "might", "shall", "to", "of", "in", "for", "on", "with", "at",
+        "by", "from", "about", "into", "through", "during", "before",
+        "after", "above", "below", "between", "and", "but", "or", "nor",
+        "not", "so", "very", "just", "also", "than", "then", "now",
+        "here", "there", "when", "where", "why", "how", "what", "which",
+        "who", "whom", "this", "that", "these", "those", "it", "its",
+        "if", "no", "yes", "up", "out", "off", "over", "under", "again",
+        "once", "all", "any", "both", "each", "few", "more", "most",
+        "some", "such", "only", "own", "same", "too", "hey", "hi",
+        "hello", "ok", "okay", "yeah", "yep", "nah", "nope", "please",
+        "thanks", "thank", "like", "really", "actually", "gonna", "wanna",
+        "gotta", "kinda", "dont", "im", "ive", "whats", "thats",
+    }
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{
-                "role": "user",
-                "content": f"""User's current message: '{user_input}'
+    input_words = set(re.findall(r'\w+', user_input.lower()))
+    input_words -= stop_words
 
-Known facts about the user:
-{patterns_text}
+    if not input_words:
+        # No meaningful words — return top 3 most recent patterns as general context
+        return patterns[:3]
 
-Which facts are relevant to answering the current message?
-Reply with only the numbers of relevant facts, comma separated.
-Example: 1, 3, 5
-If none are relevant reply: NONE"""
-            }],
-            max_tokens=50
-        )
+    scored = []
+    for pattern in patterns:
+        pattern_text = f"{pattern['category']} {pattern['pattern']}".lower()
+        pattern_words = set(re.findall(r'\w+', pattern_text))
+        pattern_words -= stop_words
 
-        result = response.choices[0].message.content.strip()
+        # Score = number of overlapping meaningful words
+        overlap = len(input_words & pattern_words)
 
-        if result == "NONE":
-            return []
+        # Boost score for category match
+        category_words = set(re.findall(r'\w+', pattern['category'].lower()))
+        category_overlap = len(input_words & category_words)
+        score = overlap + (category_overlap * 2)
 
-        # Parse the numbers
-        relevant = []
-        for num in result.split(","):
-            num = num.strip()
-            if num.isdigit():
-                idx = int(num) - 1
-                if 0 <= idx < len(patterns):
-                    relevant.append(patterns[idx])
+        if score > 0:
+            scored.append((score, pattern))
 
-        return relevant
+    if not scored:
+        # No keyword matches — include personality/preference patterns as fallback
+        fallback_categories = {"personality", "preferences", "habits", "food", "music"}
+        fallback = [p for p in patterns if p["category"].lower() in fallback_categories]
+        return fallback[:3]
 
-    except Exception as e:
-        print(f"[Context check skipped: {e}]")
-        return []
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in scored[:5]]

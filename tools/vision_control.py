@@ -1,13 +1,13 @@
 import os
-import socket
 import json
 import base64
 import re
+import requests
 from groq import Groq
 
 VISION_MODEL = "llama-3.2-90b-vision-preview"
-FLUTTER_HOST = "127.0.0.1"
-FLUTTER_PORT = 5001
+FLUTTER_URL = "http://127.0.0.1:5001/command"
+REQUEST_TIMEOUT = 15
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -19,50 +19,33 @@ def _load_key(name: str) -> str:
 client = Groq(api_key=_load_key("GROQ"))
 
 def _send_command(command: dict) -> dict:
+    """Send command to Flutter via HTTP POST."""
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(15)
-        sock.connect((FLUTTER_HOST, FLUTTER_PORT))
-        sock.sendall((json.dumps(command) + "\n").encode("utf-8"))
-        response_data = b""
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            response_data += chunk
-            if b"\n" in response_data:
-                break
-        sock.close()
-        response_text = response_data.decode("utf-8").strip()
-        if response_text:
-            return json.loads(response_text)
-        return {"status": "error", "message": "Empty response from Flutter"}
-    except ConnectionRefusedError:
+        response = requests.post(
+            FLUTTER_URL,
+            json=command,
+            timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.ConnectionError:
         return {"status": "error", "message": "Flutter app not running. Open Lyra app on phone first."}
-    except socket.timeout:
-        return {"status": "error", "message": "Flutter app timed out"}
+    except requests.exceptions.Timeout:
+        return {"status": "error", "message": "Flutter app timed out."}
     except Exception as e:
-        return {"status": "error", "message": f"Socket error: {e}"}
+        return {"status": "error", "message": f"HTTP error: {e}"}
 
-def take_screenshot() -> str:
-    result = _send_command({"action": "screenshot"})
-    if result.get("status") == "ok":
-        return result.get("path")
-    print(f"[Vision] {result.get('message', 'Unknown error')}")
-    return None
+def _clean_text(text: str) -> str:
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'#+\s', '', text)
+    text = ' '.join(text.split())
+    return text.strip()
 
-def _image_to_base64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-def analyze_screen(prompt: str = None) -> str:
-    path = take_screenshot()
-    if not path:
-        return "Couldn't take screenshot. Make sure the Lyra app is open on your phone."
-    if not prompt:
-        prompt = "Describe what is on this screen. Be concise and focus on the main content visible."
+def _analyze_image(path: str, prompt: str) -> str:
+    """Send screenshot to Groq vision model."""
     try:
-        img_base64 = _image_to_base64(path)
+        with open(path, "rb") as f:
+            img_base64 = base64.b64encode(f.read()).decode("utf-8")
         response = client.chat.completions.create(
             model=VISION_MODEL,
             messages=[{
@@ -74,25 +57,130 @@ def analyze_screen(prompt: str = None) -> str:
             }],
             max_tokens=1000
         )
-        result = response.choices[0].message.content.strip()
-        result = re.sub(r'\*+', '', result)
-        result = re.sub(r'#+\s', '', result)
-        result = ' '.join(result.split())
-        return result
+        return _clean_text(response.choices[0].message.content.strip())
     except Exception as e:
         return f"Vision error: {e}"
     finally:
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except:
-                pass
+        try:
+            os.remove(path)
+        except:
+            pass
 
 def read_screen() -> str:
-    return analyze_screen("Read and transcribe ALL text visible on this screen. Return the text exactly as shown. Do not describe the UI, just give me the text content.")
+    """
+    Primary: Use accessibility service — returns structured text instantly, no API call.
+    Fallback: Screenshot → Groq vision.
+    """
+    result = _send_command({"action": "read_screen"})
+
+    if result.get("status") != "ok":
+        return result.get("message", "Could not read screen.")
+
+    source = result.get("source", "unknown")
+
+    # Accessibility path — structured text, free, instant
+    if source == "accessibility":
+        data = result.get("data", {})
+        if data.get("status") != "ok":
+            return data.get("message", "Accessibility service not active.")
+        app = data.get("app", "Unknown app")
+        full_text = data.get("full_text", "").strip()
+        if not full_text:
+            return f"{app} is open but no readable text found on screen."
+        return f"[{app}] {full_text}"
+
+    # Screenshot fallback — costs a Groq vision API call
+    if source == "screenshot":
+        path = result.get("path")
+        if not path:
+            return "Screenshot path missing."
+        return _analyze_image(
+            path,
+            "Read and transcribe ALL text visible on this screen. Return the text exactly as shown, no descriptions."
+        )
+
+    return "Unknown response from Flutter."
 
 def describe_screen() -> str:
-    return analyze_screen("What app is open and what is the user looking at? Describe briefly — what screen is this, what content is visible, what state is it in. Be concise, 2-3 sentences max.")
+    """Describe what app/screen is open."""
+    result = _send_command({"action": "read_screen"})
+
+    if result.get("status") != "ok":
+        return result.get("message", "Could not read screen.")
+
+    source = result.get("source", "unknown")
+
+    if source == "accessibility":
+        data = result.get("data", {})
+        if data.get("status") != "ok":
+            return data.get("message", "Accessibility service not active.")
+        app = data.get("app", "Unknown app")
+        full_text = data.get("full_text", "").strip()
+        if not full_text:
+            return f"{app} is open, no visible text content."
+        # Summarize with Groq — text only, no vision API needed
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{
+                    "role": "user",
+                    "content": f"The user has {app} open. Here's the screen text: {full_text[:2000]}\n\nDescribe briefly what they're looking at in 1-2 sentences."
+                }],
+                max_tokens=150
+            )
+            return _clean_text(response.choices[0].message.content.strip())
+        except:
+            return f"{app} is open. Content: {full_text[:300]}"
+
+    if source == "screenshot":
+        path = result.get("path")
+        if not path:
+            return "Screenshot path missing."
+        return _analyze_image(
+            path,
+            "What app is open and what is the user looking at? Describe briefly in 1-2 sentences."
+        )
+
+    return "Unknown response from Flutter."
+
+def analyze_screen() -> str:
+    """Full screen analysis — accessibility text + optional vision."""
+    return read_screen()
 
 def analyze_screen_with_question(question: str) -> str:
-    return analyze_screen(f"Look at this screenshot and answer this question: {question}")
+    """Answer a specific question about what's on screen."""
+    result = _send_command({"action": "read_screen"})
+
+    if result.get("status") != "ok":
+        return result.get("message", "Could not read screen.")
+
+    source = result.get("source", "unknown")
+
+    if source == "accessibility":
+        data = result.get("data", {})
+        if data.get("status") != "ok":
+            return data.get("message", "Accessibility service not active.")
+        app = data.get("app", "Unknown app")
+        full_text = data.get("full_text", "").strip()
+        if not full_text:
+            return f"{app} is open but no readable text found."
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{
+                    "role": "user",
+                    "content": f"App open: {app}\nScreen text: {full_text[:2000]}\n\nQuestion: {question}\n\nAnswer directly and briefly."
+                }],
+                max_tokens=300
+            )
+            return _clean_text(response.choices[0].message.content.strip())
+        except Exception as e:
+            return f"Could not analyze: {e}"
+
+    if source == "screenshot":
+        path = result.get("path")
+        if not path:
+            return "Screenshot path missing."
+        return _analyze_image(path, question)
+
+    return "Unknown response from Flutter."

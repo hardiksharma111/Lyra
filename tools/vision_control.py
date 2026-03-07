@@ -1,13 +1,13 @@
 import os
+import socket
 import json
 import base64
 import re
-import time
 from groq import Groq
 
 VISION_MODEL = "llama-3.2-90b-vision-preview"
-COMMAND_FILE = "/sdcard/Download/lyra_cmd.json"
-RESULT_FILE = "/sdcard/Download/lyra_result.json"
+FLUTTER_HOST = "127.0.0.1"
+FLUTTER_PORT = 5001
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -18,30 +18,37 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
+def _send_command(command: dict) -> dict:
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(15)
+        sock.connect((FLUTTER_HOST, FLUTTER_PORT))
+        sock.sendall((json.dumps(command) + "\n").encode("utf-8"))
+        response_data = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response_data += chunk
+            if b"\n" in response_data:
+                break
+        sock.close()
+        response_text = response_data.decode("utf-8").strip()
+        if response_text:
+            return json.loads(response_text)
+        return {"status": "error", "message": "Empty response from Flutter"}
+    except ConnectionRefusedError:
+        return {"status": "error", "message": "Flutter app not running. Open Lyra app on phone first."}
+    except socket.timeout:
+        return {"status": "error", "message": "Flutter app timed out"}
+    except Exception as e:
+        return {"status": "error", "message": f"Socket error: {e}"}
+
 def take_screenshot() -> str:
-    # Clean old files
-    for f in [COMMAND_FILE, RESULT_FILE]:
-        if os.path.exists(f):
-            os.remove(f)
-
-    # Write command for Flutter
-    with open(COMMAND_FILE, "w") as f:
-        json.dump({"action": "screenshot"}, f)
-
-    # Wait for Flutter to respond (max 15 seconds)
-    for _ in range(30):
-        time.sleep(0.5)
-        if os.path.exists(RESULT_FILE):
-            with open(RESULT_FILE, "r") as f:
-                result = json.load(f)
-            os.remove(RESULT_FILE)
-            if result.get("status") == "ok":
-                return result.get("path")
-            else:
-                print(f"[Vision] {result.get('message', 'Unknown error')}")
-                return None
-
-    print("[Vision] Flutter did not respond in time. Is Lyra app open?")
+    result = _send_command({"action": "screenshot"})
+    if result.get("status") == "ok":
+        return result.get("path")
+    print(f"[Vision] {result.get('message', 'Unknown error')}")
     return None
 
 def _image_to_base64(path: str) -> str:
@@ -52,10 +59,8 @@ def analyze_screen(prompt: str = None) -> str:
     path = take_screenshot()
     if not path:
         return "Couldn't take screenshot. Make sure the Lyra app is open on your phone."
-
     if not prompt:
         prompt = "Describe what is on this screen. Be concise and focus on the main content visible."
-
     try:
         img_base64 = _image_to_base64(path)
         response = client.chat.completions.create(

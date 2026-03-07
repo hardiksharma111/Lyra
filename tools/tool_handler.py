@@ -146,6 +146,15 @@ Examples:
 - "message john that i'll be late" → {{"tool": "send_whatsapp", "params": {{"contact": "john", "message": "I'll be late"}}, "confidence": "high"}}
 - "text om hi" → {{"tool": "send_whatsapp", "params": {{"contact": "om", "message": "hi"}}, "confidence": "high"}}
 - "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
+- "sync my data" → {{"tool": "sync_push", "params": {{}}, "confidence": "high"}}
+- "backup to drive" → {{"tool": "sync_push", "params": {{}}, "confidence": "high"}}
+- "pull from drive" → {{"tool": "sync_pull", "params": {{}}, "confidence": "high"}}
+- "when did u last sync" → {{"tool": "sync_status", "params": {{}}, "confidence": "high"}}
+
+CRITICAL RULES:
+- If user mentions "whatsapp" + "message/chat/text" → ALWAYS use get_whatsapp_messages or send_whatsapp. NEVER use read_screen.
+- read_screen / describe_screen ONLY when user says "screen", "what's showing", "what do I see", "what's on my phone" — NOT for app-specific data queries.
+- get_whatsapp_messages reads from notification history. It does NOT open WhatsApp.
 
 Respond with JSON only, no other text."""
             }],
@@ -193,6 +202,17 @@ def execute_tool(tool: str, params: dict) -> str | None:
             return check_notifications(params.get("app"), params.get("minutes", 60))
         if tool == "get_whatsapp_messages":
             return get_whatsapp_messages(params.get("minutes", 120))
+        if tool == "sync_push":
+            from tools.cloud_sync import push_to_drive
+            ok, msg = push_to_drive()
+            return msg
+        if tool == "sync_pull":
+            from tools.cloud_sync import pull_from_drive
+            ok, msg = pull_from_drive()
+            return msg
+        if tool == "sync_status":
+            from tools.cloud_sync import sync_status
+            return sync_status()
         if tool == "send_whatsapp":
             return send_whatsapp(params.get("contact", ""), params.get("message", ""))
 

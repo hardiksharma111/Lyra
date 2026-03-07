@@ -35,6 +35,57 @@ if IS_ANDROID:
     def listen():
         return input("You: ").strip()
 
+    # Lightweight HTTP server so Flutter can POST activity events directly to Python
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import json as _json
+
+    class EventHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = _json.loads(self.rfile.read(length))
+                if body.get("action") == "log_event":
+                    from tools.activity_log import log_event
+                    log_event(body.get("event", {}))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+            except Exception:
+                self.send_response(500)
+                self.end_headers()
+        def log_message(self, *args): pass  # silence access logs
+
+    def start_event_server():
+        server = HTTPServer(("127.0.0.1", 5002), EventHandler)
+        server.serve_forever()
+
+    event_thread = threading.Thread(target=start_event_server, daemon=True)
+    event_thread.start()
+
+    # Offline message queue — processed when Groq comes back online
+    _offline_queue = []
+    _is_online = True
+
+    def check_online():
+        global _is_online
+        try:
+            import requests as _r
+            _r.get("https://api.groq.com", timeout=3)
+            return True
+        except Exception:
+            return False
+
+    def start_sync():
+        try:
+            from tools.cloud_sync import start_auto_sync, push_to_drive
+            push_to_drive()
+            start_auto_sync()
+        except Exception:
+            pass
+
+    sync_thread = threading.Thread(target=start_sync, daemon=True)
+    sync_thread.start()
+
 else:
     from voice import speak, listen
     from voice.wakeword import wait_for_wakeword
@@ -188,10 +239,7 @@ def main():
                             if text:
                                 safe_print(f"[Flutter] {text}")
                                 handle_input(text)
-                    activity_events = data.get("activity_events", [])
-                    if activity_events:
-                        from tools.activity_log import append_events
-                        append_events(activity_events)
+
                 except Exception:
                     pass
                 time.sleep(1)  # Poll every second

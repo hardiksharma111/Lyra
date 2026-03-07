@@ -92,7 +92,7 @@ def main():
 
         if should_exit_now:
             if IS_ANDROID:
-                push_to_flutter("speak", "Goodbye. Starting new session...")
+                push_to_flutter("speak", "Later.")
                 end_session(session_id)
                 should_exit[0] = True
                 # On Android: restart instead of killing — keeps Termux alive

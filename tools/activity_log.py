@@ -5,12 +5,12 @@ from groq import Groq
 
 FLUTTER_URL = "http://127.0.0.1:5001/command"
 ACTIVITY_LOG_PATHS = [
-    "/sdcard/lyra_activity.json",
-    "/data/data/com.example.lyra_app/files/lyra_activity.json"
+    "/data/data/com.termux/files/home/lyra_activity.json",
+    "/sdcard/lyra_activity.json"
 ]
 NOTIF_LOG_PATHS = [
-    "/sdcard/lyra_notifications.json",
-    "/data/data/com.example.lyra_app/files/lyra_notifications.json"
+    "/data/data/com.termux/files/home/lyra_notifications.json",
+    "/sdcard/lyra_notifications.json"
 ]
 
 def _find_log(paths: list) -> str | None:

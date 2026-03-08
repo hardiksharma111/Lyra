@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -12,7 +13,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
-    "https://www.googleapis.com/auth/drive.file",  # Drive: read/write files Lyra created
+    "https://www.googleapis.com/auth/drive.file",
 ]
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,7 +115,23 @@ def get_assignments(account="college"):
 
 # ─── Contacts ─────────────────────────────────────────────────────────────────
 
+def _get_termux_contacts():
+    try:
+        result = subprocess.run(
+            ["termux-contact-list"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            contacts = json.loads(result.stdout)
+            return [{"name": c.get("name", ""), "phone": c.get("number", "")} for c in contacts if c.get("name") and c.get("number")]
+    except Exception:
+        pass
+    return []
+
 def get_contacts(account="main"):
+    termux_contacts = _get_termux_contacts()
+    if termux_contacts:
+        return termux_contacts
     try:
         creds = _get_creds(account)
         service = build("people", "v1", credentials=creds)
@@ -134,22 +151,54 @@ def get_contacts(account="main"):
         return [{"error": str(e)}]
 
 def resolve_contact_phone(name: str, account="main") -> str | None:
-    contacts = get_contacts(account)
     name_lower = name.lower().strip()
-    best = None
-    best_score = 0
-    for c in contacts:
-        if "error" in c or not c.get("phone"):
-            continue
-        cname = c["name"].lower()
-        if name_lower == cname:
-            return c["phone"]
-        if name_lower in cname or cname.startswith(name_lower):
-            score = len(name_lower)
-            if score > best_score:
-                best_score = score
-                best = c["phone"]
-    return best
+
+    # Try termux contacts first (all phone contacts, no credentials needed)
+    termux_contacts = _get_termux_contacts()
+    if termux_contacts:
+        best = None
+        best_score = 0
+        for c in termux_contacts:
+            if not c.get("phone"):
+                continue
+            cname = c["name"].lower().strip()
+            if name_lower == cname:
+                return _clean_phone(c["phone"])
+            if name_lower in cname or cname.startswith(name_lower):
+                score = len(name_lower)
+                if score > best_score:
+                    best_score = score
+                    best = _clean_phone(c["phone"])
+        if best:
+            return best
+
+    # Fallback: Google Contacts API
+    try:
+        contacts = get_contacts(account)
+        best = None
+        best_score = 0
+        for c in contacts:
+            if "error" in c or not c.get("phone"):
+                continue
+            cname = c["name"].lower().strip()
+            if name_lower == cname:
+                return _clean_phone(c["phone"])
+            if name_lower in cname or cname.startswith(name_lower):
+                score = len(name_lower)
+                if score > best_score:
+                    best_score = score
+                    best = _clean_phone(c["phone"])
+        return best
+    except Exception:
+        return None
+
+def _clean_phone(phone: str) -> str:
+    # Remove spaces and dashes, keep + and digits
+    cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
+    # Add +91 if no country code
+    if cleaned and not cleaned.startswith("+"):
+        cleaned = "+91" + cleaned
+    return cleaned
 
 # ─── Drive Sync ───────────────────────────────────────────────────────────────
 
@@ -164,7 +213,6 @@ def _get_or_create_folder(service) -> str:
     global _drive_folder_id
     if _drive_folder_id:
         return _drive_folder_id
-    # Search for existing folder
     results = service.files().list(
         q=f"name='{LYRA_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
         fields="files(id, name)"
@@ -173,7 +221,6 @@ def _get_or_create_folder(service) -> str:
     if files:
         _drive_folder_id = files[0]["id"]
         return _drive_folder_id
-    # Create folder
     folder = service.files().create(body={
         "name": LYRA_FOLDER_NAME,
         "mimeType": "application/vnd.google-apps.folder"
@@ -186,8 +233,6 @@ def upload_file(local_path: str, drive_filename: str = None, account="main") -> 
         service = _get_drive_service(account)
         folder_id = _get_or_create_folder(service)
         filename = drive_filename or os.path.basename(local_path)
-
-        # Check if file exists already
         results = service.files().list(
             q=f"name='{filename}' and '{folder_id}' in parents and trashed=false",
             fields="files(id)"
@@ -203,9 +248,8 @@ def upload_file(local_path: str, drive_filename: str = None, account="main") -> 
                 fields="id"
             ).execute()
         return True
-    except Exception as e:
+    except Exception:
         return False
-
 
 def download_file(drive_filename: str, local_path: str, account="main") -> bool:
     try:
@@ -230,7 +274,6 @@ def download_file(drive_filename: str, local_path: str, account="main") -> bool:
     except Exception:
         return False
 
-
 def sync_to_drive(account="main") -> str:
     files_to_sync = [
         "memory/categories.json",
@@ -243,7 +286,6 @@ def sync_to_drive(account="main") -> str:
             if upload_file(full_path, rel_path.replace("/", "_"), account):
                 uploaded += 1
     return f"Synced {uploaded} files to Drive"
-
 
 def sync_from_drive(account="main") -> str:
     files_to_sync = [

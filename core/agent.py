@@ -55,12 +55,16 @@ class Agent:
         self.is_first_message = True
         self.debug = DEBUG_MODE
         self.system_prompt = BASE_PROMPT + ("\n\n" + ANDROID_CAPABILITIES if ANDROID_CAPABILITIES else "")
+        self._flutter_push_fn = None
 
     def set_session(self, session_id: int):
         self.session_id = session_id
 
     def set_debug(self, enabled: bool):
         self.debug = enabled
+
+    def set_flutter_push(self, fn):
+        self._flutter_push_fn = fn
 
     def think(self, user_input: str, tool_result: str = None) -> str:
         if user_input.strip().lower() == "debug on":
@@ -69,6 +73,18 @@ class Agent:
         if user_input.strip().lower() == "debug off":
             self.set_debug(False)
             return "Debug mode disabled."
+
+        # Intercept pending WhatsApp contact confirmation
+        if IS_ANDROID:
+            from tools.activity_log import get_pending_whatsapp, confirm_and_send
+            if get_pending_whatsapp() and self._flutter_push_fn:
+                result = confirm_and_send(user_input.strip(), self._flutter_push_fn)
+                if result:
+                    log_conversation("user", user_input)
+                    log_conversation("agent", result)
+                    self.conversation_history.append({"role": "user", "content": user_input})
+                    self.conversation_history.append({"role": "assistant", "content": result})
+                    return result
 
         log_conversation("user", user_input)
         store_conversation("user", user_input)
@@ -86,8 +102,6 @@ class Agent:
                 "content": f"Memory context — use this to personalize your response:\n{context}"
             })
 
-        # If a tool already fetched real data, inject it so the agent uses it
-        # and cannot hallucinate a "I can't do that" response
         if tool_result:
             messages.append({
                 "role": "system",

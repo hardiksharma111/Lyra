@@ -22,20 +22,31 @@ if IS_ANDROID:
 
     FLUTTER_URL = "http://127.0.0.1:5001/command"
 
-    def push_to_flutter(action: str, text: str = ""):
-        """Send response to Flutter app to display + speak."""
+    def push_to_flutter(action: str, data=None, text: str = ""):
+        """Send command to Flutter app."""
         try:
-            requests.post(FLUTTER_URL, json={"action": action, "text": text}, timeout=5)
+            if isinstance(data, dict):
+                payload = {"action": action, **data}
+            else:
+                payload = {"action": action, "text": text if data is None else data}
+            requests.post(FLUTTER_URL, json=payload, timeout=5)
         except Exception:
-            pass  # Flutter not open — silently ignore
+            pass
+
+    def flutter_push_fn(action: str, params: dict):
+        """Unified push function for tools that need to send commands to Flutter."""
+        try:
+            payload = {"action": action, **params}
+            requests.post(FLUTTER_URL, json=payload, timeout=5)
+        except Exception:
+            pass
 
     def speak(text: str):
-        push_to_flutter("speak", text)
+        push_to_flutter("speak", text=text)
 
     def listen():
         return input("You: ").strip()
 
-    # Lightweight HTTP server so Flutter can POST activity events directly to Python
     from http.server import HTTPServer, BaseHTTPRequestHandler
     import json as _json
 
@@ -53,7 +64,7 @@ if IS_ANDROID:
             except Exception:
                 self.send_response(500)
                 self.end_headers()
-        def log_message(self, *args): pass  # silence access logs
+        def log_message(self, *args): pass
 
     def start_event_server():
         server = HTTPServer(("127.0.0.1", 5002), EventHandler)
@@ -62,7 +73,6 @@ if IS_ANDROID:
     event_thread = threading.Thread(target=start_event_server, daemon=True)
     event_thread.start()
 
-    # Offline message queue — processed when Groq comes back online
     _offline_queue = []
     _is_online = True
 
@@ -77,7 +87,7 @@ if IS_ANDROID:
 
     def start_sync():
         try:
-            from tools.cloud_sync import start_auto_sync, push_to_drive
+            from tools.google_control import start_auto_sync, push_to_drive
             push_to_drive()
             start_auto_sync()
         except Exception:
@@ -89,6 +99,7 @@ if IS_ANDROID:
 else:
     from voice import speak, listen
     from voice.wakeword import wait_for_wakeword
+    flutter_push_fn = None
 
 ERROR_RESPONSES = [
     "I couldn't understand that",
@@ -109,9 +120,18 @@ def main():
     agent = Agent()
     session_id = start_session()
     agent.set_session(session_id)
+    if IS_ANDROID:
+        agent.set_flutter_push(flutter_push_fn)
     should_exit = [False]
 
-    # On Android: minimal startup output, Termux is background brain
+    # Patch send_whatsapp in activity_log to always have flutter_push_fn
+    if IS_ANDROID:
+        import tools.activity_log as _al
+        _original_send = _al.send_whatsapp
+        def _patched_send(contact, message, flutter_push_fn=None):
+            return _original_send(contact, message, flutter_push_fn=globals()['flutter_push_fn'])
+        _al.send_whatsapp = _patched_send
+
     if IS_ANDROID:
         safe_print("[Session started]")
         safe_print("Platform: Android")
@@ -143,10 +163,9 @@ def main():
 
         if should_exit_now:
             if IS_ANDROID:
-                push_to_flutter("speak", "Later.")
+                push_to_flutter("speak", text="Later.")
                 end_session(session_id)
                 should_exit[0] = True
-                # On Android: restart instead of killing — keeps Termux alive
                 import subprocess
                 subprocess.Popen(["python", "main.py"])
             else:
@@ -158,9 +177,8 @@ def main():
 
         if tool_result:
             if IS_ANDROID:
-                # Let agent wrap the tool result in a natural response
                 response = agent.think(user_input, tool_result=tool_result)
-                push_to_flutter("speak", response)
+                push_to_flutter("speak", text=response)
             else:
                 response = agent.think(user_input, tool_result=tool_result)
                 safe_print(f"Lyra: {response}\n")
@@ -170,7 +188,7 @@ def main():
         response = agent.think(user_input)
 
         if IS_ANDROID:
-            push_to_flutter("speak", response)
+            push_to_flutter("speak", text=response)
         else:
             safe_print(f"Lyra: {response}\n")
             speak(response)
@@ -220,10 +238,8 @@ def main():
         voice_thread = threading.Thread(target=voice_loop, daemon=True)
         voice_thread.start()
 
-    # On Android: also poll Flutter for messages typed in the app UI
     if IS_ANDROID:
         def flutter_poll_loop():
-            """Pick up messages typed in Flutter app and process them."""
             while not should_exit[0]:
                 try:
                     resp = requests.post(
@@ -239,10 +255,9 @@ def main():
                             if text:
                                 safe_print(f"[Flutter] {text}")
                                 handle_input(text)
-
                 except Exception:
                     pass
-                time.sleep(1)  # Poll every second
+                time.sleep(1)
 
         poll_thread = threading.Thread(target=flutter_poll_loop, daemon=True)
         poll_thread.start()

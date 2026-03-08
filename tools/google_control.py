@@ -1,292 +1,258 @@
 import os
 import json
-import base64
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import io
 
 SCOPES = [
-    'https://www.googleapis.com/auth/contacts.readonly',
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/classroom.courses.readonly',
-    'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly'
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/classroom.courses.readonly",
+    "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
+    "https://www.googleapis.com/auth/drive.file",  # Drive: read/write files Lyra created
 ]
 
-ACCOUNTS = {
-    "main":    "memory/google_token_main.json",
-    "college": "memory/google_token_college.json",
-}
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CREDS_FILE = os.path.join(BASE_DIR, "google_credentials.json")
+TOKEN_MAIN = os.path.join(BASE_DIR, "memory", "google_token_main.json")
+TOKEN_COLLEGE = os.path.join(BASE_DIR, "memory", "google_token_college.json")
 
-def _get_creds(account: str = "main") -> Credentials:
-    token_file = ACCOUNTS.get(account, ACCOUNTS["main"])
-    if not os.path.exists(token_file):
-        raise FileNotFoundError(f"Token not found for account '{account}'. Run setup_google.py first.")
-    creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_file, 'w') as f:
+COLLEGE_KEYWORDS = ["college", "assignment", "classroom", "course", "homework", "submit", "professor", "lecture"]
+
+def _get_token_path(account="main"):
+    return TOKEN_COLLEGE if account == "college" else TOKEN_MAIN
+
+def _get_creds(account="main"):
+    token_path = _get_token_path(account)
+    creds = None
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open(token_path, "w") as f:
             f.write(creds.to_json())
     return creds
 
-def _detect_account(context: str) -> str:
-    context_lower = context.lower()
-    college_keywords = ["college", "classroom", "assignment", "university", "school", "edu"]
-    for keyword in college_keywords:
-        if keyword in context_lower:
-            return "college"
+def detect_account(text: str) -> str:
+    text_lower = text.lower()
+    if any(k in text_lower for k in COLLEGE_KEYWORDS):
+        return "college"
     return "main"
 
-# ─── CONTACTS ───────────────────────────────────────────
+# ─── Gmail ────────────────────────────────────────────────────────────────────
 
-def get_contacts(query: str = "", account: str = "main") -> list:
+def get_emails(query="", max_results=5, account="main"):
     try:
         creds = _get_creds(account)
-        service = build('people', 'v1', credentials=creds)
-        results = service.people().connections().list(
-            resourceName='people/me',
-            pageSize=100,
-            personFields='names,phoneNumbers,emailAddresses'
+        service = build("gmail", "v1", credentials=creds)
+        results = service.users().messages().list(
+            userId="me", q=query, maxResults=max_results
         ).execute()
+        messages = results.get("messages", [])
+        emails = []
+        for msg in messages:
+            detail = service.users().messages().get(
+                userId="me", id=msg["id"], format="metadata",
+                metadataHeaders=["From", "Subject", "Date"]
+            ).execute()
+            headers = {h["name"]: h["value"] for h in detail["payload"]["headers"]}
+            snippet = detail.get("snippet", "")
+            emails.append({
+                "from": headers.get("From", ""),
+                "subject": headers.get("Subject", ""),
+                "date": headers.get("Date", ""),
+                "snippet": snippet
+            })
+        return emails
+    except Exception as e:
+        return [{"error": str(e)}]
 
-        connections = results.get('connections', [])
-        contacts = []
-        for person in connections:
-            names = person.get('names', [])
-            phones = person.get('phoneNumbers', [])
-            emails = person.get('emailAddresses', [])
+def search_emails(query: str, account="main"):
+    return get_emails(query=query, max_results=5, account=account)
 
-            name = names[0]['displayName'] if names else 'Unknown'
-            phone = phones[0]['value'] if phones else None
-            email = emails[0]['value'] if emails else None
+# ─── Classroom ────────────────────────────────────────────────────────────────
 
-            if query.lower() in name.lower() or not query:
-                contacts.append({
-                    "name": name,
-                    "phone": phone,
-                    "email": email
+def get_courses(account="college"):
+    try:
+        creds = _get_creds(account)
+        service = build("classroom", "v1", credentials=creds)
+        results = service.courses().list(courseStates=["ACTIVE"]).execute()
+        courses = results.get("courses", [])
+        return [{"id": c["id"], "name": c["name"]} for c in courses]
+    except Exception as e:
+        return [{"error": str(e)}]
+
+def get_assignments(account="college"):
+    try:
+        creds = _get_creds(account)
+        service = build("classroom", "v1", credentials=creds)
+        courses = service.courses().list(courseStates=["ACTIVE"]).execute().get("courses", [])
+        assignments = []
+        for course in courses[:5]:
+            works = service.courses().courseWork().list(
+                courseId=course["id"], orderBy="dueDate desc"
+            ).execute().get("courseWork", [])
+            for w in works[:3]:
+                due = w.get("dueDate", {})
+                due_str = f"{due.get('year','?')}-{due.get('month','?')}-{due.get('day','?')}" if due else "No due date"
+                assignments.append({
+                    "course": course["name"],
+                    "title": w.get("title", ""),
+                    "due": due_str,
+                    "state": w.get("state", "")
                 })
+        return assignments
+    except Exception as e:
+        return [{"error": str(e)}]
 
+# ─── Contacts ─────────────────────────────────────────────────────────────────
+
+def get_contacts(account="main"):
+    try:
+        creds = _get_creds(account)
+        service = build("people", "v1", credentials=creds)
+        results = service.people().connections().list(
+            resourceName="people/me",
+            pageSize=50,
+            personFields="names,emailAddresses,phoneNumbers"
+        ).execute()
+        contacts = []
+        for person in results.get("connections", []):
+            name = person.get("names", [{}])[0].get("displayName", "")
+            email = person.get("emailAddresses", [{}])[0].get("value", "")
+            phone = person.get("phoneNumbers", [{}])[0].get("value", "")
+            contacts.append({"name": name, "email": email, "phone": phone})
         return contacts
     except Exception as e:
-        return []
+        return [{"error": str(e)}]
 
-def find_contact(name: str) -> dict | None:
-    # Search main first then college
-    for account in ["main", "college"]:
-        contacts = get_contacts(query=name, account=account)
-        if contacts:
-            return contacts[0]
-    return None
+def resolve_contact_phone(name: str, account="main") -> str | None:
+    contacts = get_contacts(account)
+    name_lower = name.lower().strip()
+    best = None
+    best_score = 0
+    for c in contacts:
+        if "error" in c or not c.get("phone"):
+            continue
+        cname = c["name"].lower()
+        if name_lower == cname:
+            return c["phone"]
+        if name_lower in cname or cname.startswith(name_lower):
+            score = len(name_lower)
+            if score > best_score:
+                best_score = score
+                best = c["phone"]
+    return best
 
-def get_contact_number(name: str) -> str | None:
-    contact = find_contact(name)
-    if contact and contact.get("phone"):
-        phone = contact["phone"].replace(" ", "").replace("-", "")
-        if not phone.startswith("+"):
-            phone = "+91" + phone.lstrip("0")
-        return phone
-    return None
+# ─── Drive Sync ───────────────────────────────────────────────────────────────
 
-# ─── GMAIL ───────────────────────────────────────────────
+LYRA_FOLDER_NAME = "Lyra_Sync"
+_drive_folder_id = None
 
-def get_recent_emails(count: int = 5, account: str = None, context: str = "") -> str:
+def _get_drive_service(account="main"):
+    creds = _get_creds(account)
+    return build("drive", "v3", credentials=creds)
+
+def _get_or_create_folder(service) -> str:
+    global _drive_folder_id
+    if _drive_folder_id:
+        return _drive_folder_id
+    # Search for existing folder
+    results = service.files().list(
+        q=f"name='{LYRA_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        fields="files(id, name)"
+    ).execute()
+    files = results.get("files", [])
+    if files:
+        _drive_folder_id = files[0]["id"]
+        return _drive_folder_id
+    # Create folder
+    folder = service.files().create(body={
+        "name": LYRA_FOLDER_NAME,
+        "mimeType": "application/vnd.google-apps.folder"
+    }, fields="id").execute()
+    _drive_folder_id = folder["id"]
+    return _drive_folder_id
+
+def upload_file(local_path: str, drive_filename: str = None, account="main") -> bool:
     try:
-        if account is None:
-            account = _detect_account(context)
+        service = _get_drive_service(account)
+        folder_id = _get_or_create_folder(service)
+        filename = drive_filename or os.path.basename(local_path)
 
-        creds = _get_creds(account)
-        service = build('gmail', 'v1', credentials=creds)
-
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=count,
-            labelIds=['INBOX']
+        # Check if file exists already
+        results = service.files().list(
+            q=f"name='{filename}' and '{folder_id}' in parents and trashed=false",
+            fields="files(id)"
         ).execute()
-
-        messages = results.get('messages', [])
-        if not messages:
-            return f"No emails found in {account} inbox"
-
-        email_list = []
-        for msg in messages:
-            msg_data = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='metadata',
-                metadataHeaders=['From', 'Subject', 'Date']
+        existing = results.get("files", [])
+        media = MediaFileUpload(local_path, resumable=False)
+        if existing:
+            service.files().update(fileId=existing[0]["id"], media_body=media).execute()
+        else:
+            service.files().create(
+                body={"name": filename, "parents": [folder_id]},
+                media_body=media,
+                fields="id"
             ).execute()
-
-            headers = {h['name']: h['value'] for h in msg_data['payload']['headers']}
-            sender = headers.get('From', 'Unknown')
-            subject = headers.get('Subject', 'No subject')
-            date = headers.get('Date', '')
-
-            # Clean up sender
-            if '<' in sender:
-                sender = sender.split('<')[0].strip()
-
-            email_list.append(f"From: {sender}\nSubject: {subject}\nDate: {date}")
-
-        return f"Recent emails ({account}):\n\n" + "\n\n".join(email_list)
-
+        return True
     except Exception as e:
-        return f"Could not read emails: {e}"
+        return False
 
-def read_email_content(index: int = 0, account: str = None, context: str = "") -> str:
+
+def download_file(drive_filename: str, local_path: str, account="main") -> bool:
     try:
-        if account is None:
-            account = _detect_account(context)
-
-        creds = _get_creds(account)
-        service = build('gmail', 'v1', credentials=creds)
-
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=10,
-            labelIds=['INBOX']
+        service = _get_drive_service(account)
+        folder_id = _get_or_create_folder(service)
+        results = service.files().list(
+            q=f"name='{drive_filename}' and '{folder_id}' in parents and trashed=false",
+            fields="files(id)"
         ).execute()
+        files = results.get("files", [])
+        if not files:
+            return False
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, service.files().get_media(fileId=files[0]["id"]))
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(fh.getvalue())
+        return True
+    except Exception:
+        return False
 
-        messages = results.get('messages', [])
-        if not messages or index >= len(messages):
-            return "Email not found"
 
-        msg_data = service.users().messages().get(
-            userId='me',
-            id=messages[index]['id'],
-            format='full'
-        ).execute()
+def sync_to_drive(account="main") -> str:
+    files_to_sync = [
+        "memory/categories.json",
+        "memory/app_index.json",
+    ]
+    uploaded = 0
+    for rel_path in files_to_sync:
+        full_path = os.path.join(BASE_DIR, rel_path)
+        if os.path.exists(full_path):
+            if upload_file(full_path, rel_path.replace("/", "_"), account):
+                uploaded += 1
+    return f"Synced {uploaded} files to Drive"
 
-        headers = {h['name']: h['value'] for h in msg_data['payload']['headers']}
-        sender = headers.get('From', 'Unknown')
-        subject = headers.get('Subject', 'No subject')
 
-        # Extract body
-        body = ""
-        payload = msg_data['payload']
-
-        if 'parts' in payload:
-            for part in payload['parts']:
-                if part['mimeType'] == 'text/plain':
-                    data = part['body'].get('data', '')
-                    if data:
-                        body = base64.urlsafe_b64decode(data).decode('utf-8')
-                        break
-        elif payload['body'].get('data'):
-            body = base64.urlsafe_b64decode(
-                payload['body']['data']
-            ).decode('utf-8')
-
-        # Trim long emails
-        if len(body) > 1000:
-            body = body[:1000] + "...[truncated]"
-
-        return f"From: {sender}\nSubject: {subject}\n\n{body}"
-
-    except Exception as e:
-        return f"Could not read email: {e}"
-
-def search_emails(query: str, account: str = None) -> str:
-    try:
-        if account is None:
-            account = _detect_account(query)
-
-        creds = _get_creds(account)
-        service = build('gmail', 'v1', credentials=creds)
-
-        results = service.users().messages().list(
-            userId='me',
-            maxResults=5,
-            q=query
-        ).execute()
-
-        messages = results.get('messages', [])
-        if not messages:
-            return f"No emails found for '{query}'"
-
-        email_list = []
-        for msg in messages:
-            msg_data = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='metadata',
-                metadataHeaders=['From', 'Subject', 'Date']
-            ).execute()
-            headers = {h['name']: h['value'] for h in msg_data['payload']['headers']}
-            sender = headers.get('From', 'Unknown')
-            if '<' in sender:
-                sender = sender.split('<')[0].strip()
-            subject = headers.get('Subject', 'No subject')
-            email_list.append(f"From: {sender} — {subject}")
-
-        return f"Found {len(email_list)} emails:\n" + "\n".join(email_list)
-
-    except Exception as e:
-        return f"Could not search emails: {e}"
-
-# ─── GOOGLE CLASSROOM ────────────────────────────────────
-
-def get_assignments(account: str = "college") -> str:
-    try:
-        creds = _get_creds(account)
-        service = build('classroom', 'v1', credentials=creds)
-
-        courses = service.courses().list(
-            studentId='me',
-            courseStates=['ACTIVE']
-        ).execute().get('courses', [])
-
-        if not courses:
-            return "No active courses found"
-
-        all_assignments = []
-
-        for course in courses:
-            course_name = course['name']
-            course_id = course['id']
-
-            try:
-                work = service.courses().courseWork().list(
-                    courseId=course_id
-                ).execute().get('courseWork', [])
-
-                for item in work:
-                    title = item.get('title', 'No title')
-                    due = item.get('dueDate', None)
-
-                    due_str = "No due date"
-                    if due:
-                        due_str = f"{due.get('day', '?')}/{due.get('month', '?')}/{due.get('year', '?')}"
-
-                    all_assignments.append(
-                        f"[{course_name}] {title} — Due: {due_str}"
-                    )
-            except:
-                continue
-
-        if not all_assignments:
-            return "No assignments found"
-
-        return "Assignments:\n" + "\n".join(all_assignments[:15])
-
-    except Exception as e:
-        return f"Could not get assignments: {e}"
-
-def get_courses(account: str = "college") -> str:
-    try:
-        creds = _get_creds(account)
-        service = build('classroom', 'v1', credentials=creds)
-
-        courses = service.courses().list(
-            studentId='me',
-            courseStates=['ACTIVE']
-        ).execute().get('courses', [])
-
-        if not courses:
-            return "No active courses found"
-
-        names = [c['name'] for c in courses]
-        return "Your courses: " + ", ".join(names)
-
-    except Exception as e:
-        return f"Could not get courses: {e}"
+def sync_from_drive(account="main") -> str:
+    files_to_sync = [
+        ("memory_categories.json", "memory/categories.json"),
+        ("memory_app_index.json",  "memory/app_index.json"),
+    ]
+    downloaded = 0
+    for drive_name, rel_path in files_to_sync:
+        local_path = os.path.join(BASE_DIR, rel_path)
+        if download_file(drive_name, local_path, account):
+            downloaded += 1
+    return f"Pulled {downloaded} files from Drive"

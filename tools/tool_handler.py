@@ -203,15 +203,13 @@ def execute_tool(tool: str, params: dict) -> str | None:
         if tool == "get_whatsapp_messages":
             return get_whatsapp_messages(params.get("minutes", 120))
         if tool == "sync_push":
-            from tools.cloud_sync import push_to_drive
-            ok, msg = push_to_drive()
-            return msg
+            from tools.google_control import sync_to_drive
+            return sync_to_drive()
         if tool == "sync_pull":
-            from tools.cloud_sync import pull_from_drive
-            ok, msg = pull_from_drive()
-            return msg
+            from tools.google_control import sync_from_drive
+            return sync_from_drive()
         if tool == "sync_status":
-            from tools.cloud_sync import sync_status
+            from tools.google_control import sync_status
             return sync_status()
         if tool == "send_whatsapp":
             return send_whatsapp(params.get("contact", ""), params.get("message", ""))

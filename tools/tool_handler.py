@@ -31,8 +31,7 @@ from tools.whatsapp_control import (
     save_contact, list_contacts
 )
 from tools.google_control import (
-    get_recent_emails, read_email_content,
-    search_emails, get_assignments, get_courses
+    get_emails, search_emails, get_assignments, get_courses
 )
 
 MODEL = "llama-3.3-70b-versatile"
@@ -228,11 +227,11 @@ def execute_tool(tool: str, params: dict) -> str | None:
     if tool == "list_contacts": return list_contacts()
     if tool == "save_contact": return save_contact(params.get("name", ""), params.get("number", ""))
     if tool == "get_recent_emails":
-        return get_recent_emails(account=params.get("account", "main"), context=params.get("context", ""))
+        return get_emails(account=params.get("account", "main"))
     if tool == "read_email_content":
-        return read_email_content(index=params.get("index", 0), account=params.get("account", None))
+        return get_emails(account=params.get("account", "main"), max_results=1)
     if tool == "search_emails":
-        return search_emails(query=params.get("query", ""), account=params.get("account", None))
+        return search_emails(query=params.get("query", ""), account=params.get("account", "main"))
     if tool == "get_assignments": return get_assignments()
     if tool == "get_courses": return get_courses()
 

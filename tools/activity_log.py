@@ -58,9 +58,10 @@ def _find_contacts(name: str) -> list:
     for c in contacts:
         cname = c["name"].lower().strip()
         phone = _clean_phone(c["phone"])
+        words = cname.split()
         if name_lower == cname:
             exact.append({"name": c["name"], "phone": phone})
-        elif name_lower in cname or cname.startswith(name_lower):
+        elif any(w == name_lower or w.startswith(name_lower) for w in words):
             partial.append({"name": c["name"], "phone": phone})
     return exact if exact else partial
 

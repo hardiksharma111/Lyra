@@ -153,42 +153,28 @@ def get_contacts(account="main"):
 def resolve_contact_phone(name: str, account="main") -> str | None:
     name_lower = name.lower().strip()
 
-    # Try termux contacts first (all phone contacts, no credentials needed)
+    def _word_match(cname, query):
+        words = cname.split()
+        return any(w == query or w.startswith(query) for w in words)
+
+    # Try termux contacts first
     termux_contacts = _get_termux_contacts()
     if termux_contacts:
-        best = None
-        best_score = 0
-        for c in termux_contacts:
-            if not c.get("phone"):
-                continue
-            cname = c["name"].lower().strip()
-            if name_lower == cname:
-                return _clean_phone(c["phone"])
-            if name_lower in cname or cname.startswith(name_lower):
-                score = len(name_lower)
-                if score > best_score:
-                    best_score = score
-                    best = _clean_phone(c["phone"])
-        if best:
-            return best
+        exact = [_clean_phone(c["phone"]) for c in termux_contacts if c["name"].lower().strip() == name_lower]
+        if exact:
+            return exact[0]
+        partial = [_clean_phone(c["phone"]) for c in termux_contacts if _word_match(c["name"].lower().strip(), name_lower)]
+        if partial:
+            return partial[0]
 
     # Fallback: Google Contacts API
     try:
         contacts = get_contacts(account)
-        best = None
-        best_score = 0
-        for c in contacts:
-            if "error" in c or not c.get("phone"):
-                continue
-            cname = c["name"].lower().strip()
-            if name_lower == cname:
-                return _clean_phone(c["phone"])
-            if name_lower in cname or cname.startswith(name_lower):
-                score = len(name_lower)
-                if score > best_score:
-                    best_score = score
-                    best = _clean_phone(c["phone"])
-        return best
+        exact = [_clean_phone(c["phone"]) for c in contacts if not "error" in c and c.get("phone") and c["name"].lower().strip() == name_lower]
+        if exact:
+            return exact[0]
+        partial = [_clean_phone(c["phone"]) for c in contacts if not "error" in c and c.get("phone") and _word_match(c["name"].lower().strip(), name_lower)]
+        return partial[0] if partial else None
     except Exception:
         return None
 

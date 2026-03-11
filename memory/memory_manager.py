@@ -1,153 +1,123 @@
 import os
 import json
-import subprocess
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
+import re
+from datetime import datetime
 
-SCOPES = [
-    "https://www.googleapis.com/auth/contacts.readonly",
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/classroom.courses.readonly",
-    "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
-]
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CREDS_FILE = os.path.join(BASE_DIR, "google_credentials.json")
-TOKEN_MAIN = os.path.join(BASE_DIR, "memory", "google_token_main.json")
-TOKEN_COLLEGE = os.path.join(BASE_DIR, "memory", "google_token_college.json")
+IS_ANDROID = os.path.exists("/data/data/com.termux")
 
-COLLEGE_KEYWORDS = ["college", "assignment", "classroom", "course", "homework", "submit", "professor", "lecture"]
+MEMORY_DIR = "memory"
+os.makedirs(MEMORY_DIR, exist_ok=True)
 
+if IS_ANDROID:
+    CONV_FILE = os.path.join(MEMORY_DIR, "conversations.json")
+    PATT_FILE = os.path.join(MEMORY_DIR, "patterns.json")
 
-def _get_token_path(account="main"):
-    return TOKEN_COLLEGE if account == "college" else TOKEN_MAIN
+    def _load(path):
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return json.load(f)
+        return []
 
+    def _save(path, data):
+        with open(path, "w") as f:
+            json.dump(data, f)
 
-def _get_creds(account="main"):
-    token_path = _get_token_path(account)
-    creds = None
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
-    return creds
+    def _keyword_search(query, entries, key, limit):
+        query_words = set(re.findall(r'\w+', query.lower()))
+        scored = []
+        for e in entries:
+            text_words = set(re.findall(r'\w+', e.get(key, "").lower()))
+            score = len(query_words & text_words)
+            if score > 0:
+                scored.append((score, e))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [e for _, e in scored[:limit]]
 
+    def store_conversation(role: str, message: str):
+        data = _load(CONV_FILE)
+        data.append({
+            "role": role,
+            "message": message,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        _save(CONV_FILE, data)
 
-def detect_account(text: str) -> str:
-    return "college" if any(k in text.lower() for k in COLLEGE_KEYWORDS) else "main"
+    def store_pattern(pattern: str, category: str):
+        data = _load(PATT_FILE)
+        data.append({
+            "category": category,
+            "pattern": pattern,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        _save(PATT_FILE, data)
 
+    def recall_relevant(query: str, limit: int = 5) -> list:
+        data = _load(CONV_FILE)
+        results = _keyword_search(query, data, "message", limit)
+        return [{"message": e["message"], "role": e["role"], "timestamp": e["timestamp"]} for e in results]
 
-# ── Gmail ─────────────────────────────────────────────────────────────────────
+    def recall_patterns(query: str, limit: int = 3) -> list:
+        data = _load(PATT_FILE)
+        results = _keyword_search(query, data, "pattern", limit)
+        return [e["pattern"] for e in results]
 
-def get_emails(query="", max_results=5, account="main"):
-    try:
-        creds = _get_creds(account)
-        service = build("gmail", "v1", credentials=creds)
-        results = service.users().messages().list(
-            userId="me", q=query, maxResults=max_results
-        ).execute()
-        messages = results.get("messages", [])
-        emails = []
-        for msg in messages:
-            detail = service.users().messages().get(
-                userId="me", id=msg["id"], format="metadata",
-                metadataHeaders=["From", "Subject", "Date"]
-            ).execute()
-            headers = {h["name"]: h["value"] for h in detail["payload"]["headers"]}
-            emails.append({
-                "from": headers.get("From", ""),
-                "subject": headers.get("Subject", ""),
-                "date": headers.get("Date", ""),
-                "snippet": detail.get("snippet", "")
-            })
-        return emails
-    except Exception as e:
-        return [{"error": str(e)}]
+    def get_memory_stats() -> dict:
+        return {
+            "total_conversations": len(_load(CONV_FILE)),
+            "total_patterns": len(_load(PATT_FILE))
+        }
 
+else:
+    import chromadb
+    from sentence_transformers import SentenceTransformer
 
-def search_emails(query: str, account="main"):
-    return get_emails(query=query, max_results=5, account=account)
+    _client = chromadb.PersistentClient(path="memory/chroma_store")
+    _encoder = SentenceTransformer('all-MiniLM-L6-v2')
+    _conversations = _client.get_or_create_collection(name="conversations")
+    _patterns = _client.get_or_create_collection(name="patterns")
 
-
-# ── Classroom ─────────────────────────────────────────────────────────────────
-
-def get_courses(account="college"):
-    try:
-        creds = _get_creds(account)
-        service = build("classroom", "v1", credentials=creds)
-        results = service.courses().list(courseStates=["ACTIVE"]).execute()
-        return [{"id": c["id"], "name": c["name"]} for c in results.get("courses", [])]
-    except Exception as e:
-        return [{"error": str(e)}]
-
-
-def get_assignments(account="college"):
-    try:
-        creds = _get_creds(account)
-        service = build("classroom", "v1", credentials=creds)
-        courses = service.courses().list(courseStates=["ACTIVE"]).execute().get("courses", [])
-        assignments = []
-        for course in courses[:5]:
-            works = service.courses().courseWork().list(
-                courseId=course["id"], orderBy="dueDate desc"
-            ).execute().get("courseWork", [])
-            for w in works[:3]:
-                due = w.get("dueDate", {})
-                due_str = f"{due.get('year','?')}-{due.get('month','?')}-{due.get('day','?')}" if due else "No due date"
-                assignments.append({
-                    "course": course["name"],
-                    "title": w.get("title", ""),
-                    "due": due_str,
-                    "state": w.get("state", "")
-                })
-        return assignments
-    except Exception as e:
-        return [{"error": str(e)}]
-
-
-# ── Contacts ──────────────────────────────────────────────────────────────────
-
-def _get_termux_contacts():
-    try:
-        result = subprocess.run(
-            ["termux-contact-list"],
-            capture_output=True, text=True, timeout=10
+    def store_conversation(role: str, message: str):
+        embedding = _encoder.encode(message).tolist()
+        doc_id = f"{role}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        _conversations.add(
+            ids=[doc_id],
+            embeddings=[embedding],
+            documents=[message],
+            metadatas=[{"role": role, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]
         )
-        if result.returncode == 0 and result.stdout.strip():
-            contacts = json.loads(result.stdout)
-            return [
-                {"name": c.get("name", ""), "phone": c.get("number", "")}
-                for c in contacts if c.get("name") and c.get("number")
-            ]
-    except Exception:
-        pass
-    return []
 
+    def store_pattern(pattern: str, category: str):
+        embedding = _encoder.encode(pattern).tolist()
+        doc_id = f"pattern_{category}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        _patterns.add(
+            ids=[doc_id],
+            embeddings=[embedding],
+            documents=[pattern],
+            metadatas=[{"category": category, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]
+        )
 
-def _clean_phone(phone: str) -> str:
-    cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
-    if cleaned and not cleaned.startswith("+"):
-        cleaned = "+91" + cleaned
-    return cleaned
+    def recall_relevant(query: str, limit: int = 5) -> list:
+        embedding = _encoder.encode(query).tolist()
+        results = _conversations.query(query_embeddings=[embedding], n_results=limit)
+        if not results['documents'][0]:
+            return []
+        return [
+            {"message": doc, "role": meta["role"], "timestamp": meta["timestamp"]}
+            for doc, meta in zip(results['documents'][0], results['metadatas'][0])
+        ]
 
+    def recall_patterns(query: str, limit: int = 3) -> list:
+        embedding = _encoder.encode(query).tolist()
+        results = _patterns.query(query_embeddings=[embedding], n_results=limit)
+        if not results['documents'][0]:
+            return []
+        return results['documents'][0]
 
-def resolve_contact_phone(name: str) -> str | None:
-    name_lower = name.lower().strip()
-
-    def word_match(cname, query):
-        return any(w == query or w.startswith(query) for w in cname.split())
-
-    contacts = _get_termux_contacts()
-    exact = [_clean_phone(c["phone"]) for c in contacts if c["name"].lower().strip() == name_lower]
-    if exact:
-        return exact[0]
-    partial = [_clean_phone(c["phone"]) for c in contacts if word_match(c["name"].lower().strip(), name_lower)]
-    return partial[0] if partial else None
+    def get_memory_stats() -> dict:
+        return {
+            "total_conversations": _conversations.count(),
+            "total_patterns": _patterns.count()
+        }

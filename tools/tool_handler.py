@@ -16,6 +16,8 @@ from tools.spotify_control import (
 from tools.google_control import (
     get_emails, search_emails, get_assignments, get_courses
 )
+from tools.search import search
+from tools.code_executor import run_code
 
 MODEL = "llama-3.3-70b-versatile"
 
@@ -30,6 +32,8 @@ client = Groq(api_key=_load_key("GROQ"))
 
 AVAILABLE_TOOLS = """
 Available tools:
+- search [query]: Search the web for any information, news, facts
+- run_code [code]: Execute Python code and return the result
 - get_battery: Get battery percentage
 - what_was_i_doing [minutes]: What apps/activity in last X minutes (default 60)
 - last_app_opened: What was the last app opened
@@ -76,6 +80,11 @@ Respond with JSON only:
 
 Examples:
 - "goodbye" → {{"tool": "exit", "params": {{}}, "confidence": "high"}}
+- "search who is elon musk" → {{"tool": "search", "params": {{"query": "who is elon musk"}}, "confidence": "high"}}
+- "what's the latest news on ai" → {{"tool": "search", "params": {{"query": "latest AI news 2025"}}, "confidence": "high"}}
+- "what's the weather in mumbai" → {{"tool": "search", "params": {{"query": "weather in mumbai today"}}, "confidence": "high"}}
+- "calculate compound interest for 10000 at 8 percent for 5 years" → {{"tool": "run_code", "params": {{"code": "p=10000;r=8/100;t=5;print(p*(1+r)**t)"}}, "confidence": "high"}}
+- "run this code: print(2+2)" → {{"tool": "run_code", "params": {{"code": "print(2+2)"}}, "confidence": "high"}}
 - "play something chill" → {{"tool": "play_by_mood", "params": {{"mood": "chill"}}, "confidence": "high"}}
 - "next song" → {{"tool": "next_track", "params": {{}}, "confidence": "high"}}
 - "check my emails" → {{"tool": "get_recent_emails", "params": {{"account": "main"}}, "confidence": "high"}}
@@ -87,11 +96,13 @@ Examples:
 - "check my whatsapp" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
 - "send rahul hey on whatsapp" → {{"tool": "send_whatsapp", "params": {{"contact": "rahul", "message": "hey"}}, "confidence": "high"}}
 - "tell priya i'm coming" → {{"tool": "send_whatsapp", "params": {{"contact": "priya", "message": "I'm coming"}}, "confidence": "high"}}
-- "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
 - "battery" → {{"tool": "get_battery", "params": {{}}, "confidence": "high"}}
+- "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
 
 RULES:
-- WhatsApp message/chat/text queries → get_whatsapp_messages or send_whatsapp
+- Use search for anything needing current info, facts, news, weather, prices
+- Use run_code when user asks to calculate, compute, or run something
+- WhatsApp message queries → get_whatsapp_messages or send_whatsapp
 - Low confidence if genuinely ambiguous → tool: none
 
 JSON only, no other text."""
@@ -108,6 +119,12 @@ JSON only, no other text."""
 def execute_tool(tool: str, params: dict) -> str | None:
     if not tool or tool == "none":
         return None
+
+    if tool == "search":
+        return search(params.get("query", ""))
+
+    if tool == "run_code":
+        return run_code(params.get("code", ""))
 
     if tool == "get_battery":
         result = subprocess.run(["termux-battery-status"], capture_output=True, text=True)

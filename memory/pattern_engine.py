@@ -58,7 +58,6 @@ def analyze_and_store(user_input: str) -> list:
                     new_cat not in BLACKLISTED_CATEGORIES):
                     categories.append(new_cat)
                     _save_categories(categories)
-                    print(f"[Memory: created new category '{new_cat}']")
 
     for line in response.split("\n"):
         for category in categories:
@@ -98,7 +97,6 @@ NEWCAT: NONE"""
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"[Memory analysis skipped: {e}]")
         return None
 
 def get_profile_summary() -> dict:

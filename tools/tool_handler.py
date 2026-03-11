@@ -21,6 +21,7 @@ from tools.code_executor import run_code
 
 MODEL = "llama-3.3-70b-versatile"
 
+
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
         for line in f:
@@ -28,36 +29,9 @@ def _load_key(name: str) -> str:
                 return line.split("=", 1)[1].strip()
     raise ValueError(f"{name} key not found in Keys.txt")
 
+
 client = Groq(api_key=_load_key("GROQ"))
 
-AVAILABLE_TOOLS = """
-Available tools:
-- search [query]: Search the web for any information, news, facts
-- run_code [code]: Execute Python code and return the result
-- get_battery: Get battery percentage
-- what_was_i_doing [minutes]: What apps/activity in last X minutes (default 60)
-- last_app_opened: What was the last app opened
-- check_notifications [app] [minutes]: Recent notifications, optional app filter
-- get_whatsapp_messages [minutes]: Read recent WhatsApp messages from notifications
-- send_whatsapp [contact] [message]: Send a WhatsApp message
-- list_contacts: List phone contacts
-- play_pause: Play or pause Spotify
-- next_track: Skip to next track
-- previous_track: Go to previous track
-- get_current_track: What song is playing right now
-- play_song [song name]: Play a specific song
-- play_artist [artist name]: Play top tracks by artist
-- play_playlist [playlist name]: Play a playlist
-- spotify_volume [0-100]: Set Spotify volume
-- play_by_mood [mood]: Play music matching a mood
-- get_user_playlists: List Spotify playlists
-- get_recent_emails [account]: Get recent emails (main/college)
-- search_emails [query] [account]: Search emails
-- get_assignments: Get Google Classroom assignments
-- get_courses: Get list of courses
-- exit: Exit Lyra
-- none: No tool needed, just conversation
-"""
 
 def detect_intent(user_input: str) -> dict:
     try:
@@ -65,47 +39,40 @@ def detect_intent(user_input: str) -> dict:
             model=MODEL,
             messages=[{
                 "role": "user",
-                "content": f"""You are an intent detector for a personal AI assistant running on Android.
+                "content": f"""You are an intent detector for a personal AI assistant on Android.
 
-{AVAILABLE_TOOLS}
+TOOLS:
+- search [query]: web search — use for anything needing current/live info
+- run_code [code]: execute Python — use for calculations, data processing
+- get_battery: battery status
+- what_was_i_doing [minutes]: recent phone activity
+- last_app_opened: last app used
+- check_notifications [app] [minutes]: recent notifications
+- get_whatsapp_messages [minutes]: recent WhatsApp messages
+- send_whatsapp [contact] [message]: send WhatsApp message
+- list_contacts: phone contacts
+- play_pause / next_track / previous_track / get_current_track: Spotify playback
+- play_song [song] / play_artist [artist] / play_playlist [name]: Spotify play
+- spotify_volume [0-100] / play_by_mood [mood] / get_user_playlists: Spotify extras
+- get_recent_emails [account]: Gmail (account = main or college)
+- search_emails [query] [account]: search Gmail
+- get_assignments / get_courses: Google Classroom
+- exit: quit Lyra
+- none: just conversation, no tool needed
 
-User message: '{user_input}'
+DECISION RULES (apply in order):
+1. Needs current/live data (weather, news, prices, scores, facts, anything happening now) → search
+2. Needs math, calculation, conversion, or code → run_code
+3. Asks about phone activity, notifications, WhatsApp → matching phone tool
+4. Asks about music/Spotify → matching Spotify tool
+5. Asks about email, assignments → matching Google tool
+6. Says goodbye/exit/bye/later → exit
+7. Everything else → none
 
-Respond with JSON only:
-{{
-    "tool": "tool_name_or_none",
-    "params": {{}},
-    "confidence": "high/medium/low"
-}}
+Respond with JSON only — no other text:
+{{"tool": "tool_name", "params": {{}}, "confidence": "high/medium/low"}}
 
-Examples:
-- "goodbye" → {{"tool": "exit", "params": {{}}, "confidence": "high"}}
-- "search who is elon musk" → {{"tool": "search", "params": {{"query": "who is elon musk"}}, "confidence": "high"}}
-- "what's the latest news on ai" → {{"tool": "search", "params": {{"query": "latest AI news 2025"}}, "confidence": "high"}}
-- "what's the weather in mumbai" → {{"tool": "search", "params": {{"query": "weather in mumbai today"}}, "confidence": "high"}}
-- "calculate compound interest for 10000 at 8 percent for 5 years" → {{"tool": "run_code", "params": {{"code": "p=10000;r=8/100;t=5;print(p*(1+r)**t)"}}, "confidence": "high"}}
-- "run this code: print(2+2)" → {{"tool": "run_code", "params": {{"code": "print(2+2)"}}, "confidence": "high"}}
-- "play something chill" → {{"tool": "play_by_mood", "params": {{"mood": "chill"}}, "confidence": "high"}}
-- "next song" → {{"tool": "next_track", "params": {{}}, "confidence": "high"}}
-- "check my emails" → {{"tool": "get_recent_emails", "params": {{"account": "main"}}, "confidence": "high"}}
-- "college emails" → {{"tool": "get_recent_emails", "params": {{"account": "college"}}, "confidence": "high"}}
-- "what assignments do i have" → {{"tool": "get_assignments", "params": {{}}, "confidence": "high"}}
-- "what was i doing" → {{"tool": "what_was_i_doing", "params": {{"minutes": 60}}, "confidence": "high"}}
-- "last app i opened" → {{"tool": "last_app_opened", "params": {{}}, "confidence": "high"}}
-- "any notifications" → {{"tool": "check_notifications", "params": {{"minutes": 60}}, "confidence": "high"}}
-- "check my whatsapp" → {{"tool": "get_whatsapp_messages", "params": {{"minutes": 120}}, "confidence": "high"}}
-- "send rahul hey on whatsapp" → {{"tool": "send_whatsapp", "params": {{"contact": "rahul", "message": "hey"}}, "confidence": "high"}}
-- "tell priya i'm coming" → {{"tool": "send_whatsapp", "params": {{"contact": "priya", "message": "I'm coming"}}, "confidence": "high"}}
-- "battery" → {{"tool": "get_battery", "params": {{}}, "confidence": "high"}}
-- "how are you" → {{"tool": "none", "params": {{}}, "confidence": "high"}}
-
-RULES:
-- Use search for anything needing current info, facts, news, weather, prices
-- Use run_code when user asks to calculate, compute, or run something
-- WhatsApp message queries → get_whatsapp_messages or send_whatsapp
-- Low confidence if genuinely ambiguous → tool: none
-
-JSON only, no other text."""
+User message: '{user_input}'"""
             }],
             max_tokens=150
         )

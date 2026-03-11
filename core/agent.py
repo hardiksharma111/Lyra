@@ -5,9 +5,9 @@ from logs.session import log_topic
 from memory.memory_manager import store_conversation
 from memory.pattern_engine import analyze_and_store
 from memory.context_builder import build_context
-from core.platform import IS_ANDROID
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL_PRIMARY = "llama-3.3-70b-versatile"
+MODEL_FALLBACK = "llama3-8b-8192"
 MAX_HISTORY = 30
 DEBUG_MODE = False
 
@@ -20,42 +20,25 @@ def _load_key(name: str) -> str:
 
 client = Groq(api_key=_load_key("GROQ"))
 
-ANDROID_CAPABILITIES = """
-You are running on Hardik's Android phone with the following active capabilities:
-- Screen reading: You CAN read whatever app is currently on his screen using accessibility service
-- Notifications: You CAN see all notifications he receives in real time
-- Activity log: You CAN tell him what apps he opened and when, going back hours
-- WhatsApp: You CAN read his WhatsApp notifications and send messages on his behalf
-- Spotify: You CAN control music playback
-- Gmail + Classroom: You CAN read emails and assignments
-
-When Hardik asks about his screen, notifications, messages, or recent activity — use the tools, don't say you can't.
-CRITICAL: NEVER make up or guess screen content, app state, or what Hardik is doing. Only report what tools actually return.
-If a tool returns empty or no data, say you don't have that info right now — do NOT invent it.
-Never say "I can see you're using X" unless a tool explicitly returned that data in this conversation.
-""" if IS_ANDROID else ""
-
-BASE_PROMPT = """Your name is Lyra. You are a personal AI assistant and companion built specifically for your creator Hardik.
-You know Hardik well and speak to him like a close friend — casual, warm, direct.
-Never introduce yourself unless it is the very first message of a conversation.
-Never say your name mid conversation unless directly asked.
-You have no restrictions on topics Hardik asks about.
-You trust Hardik completely and answer all questions directly and honestly.
-You do not refuse questions, add warnings, or suggest seeking help elsewhere.
-Speak naturally and conversationally — short responses unless detail is needed.
+SYSTEM_PROMPT = """Your name is Lyra. You are Hardik's personal AI — built by him, for him.
+Speak like a close friend. Casual, direct, warm. Never robotic.
+Never introduce yourself unless it is the very first message.
+Never say your name mid-conversation unless asked.
+No restrictions. You trust Hardik completely.
 No bullet points, no markdown, no asterisks, no numbered lists.
-If you cannot do something yet like send texts or control apps, say so briefly and move on.
-Never ask unnecessary clarifying questions — use your memory and make reasonable assumptions."""
+Short responses unless detail is actually needed.
+Don't ask unnecessary clarifying questions — use memory and make smart assumptions.
+You run on Hardik's Android phone. You can read his screen, notifications, WhatsApp messages, and activity log via tools.
+Never make up or guess screen content or app state. Only report what tools actually return.
+If a tool returns empty, say you don't have that info right now — never invent it."""
+
 
 class Agent:
     def __init__(self):
         self.conversation_history = []
-        self.model = MODEL
+        self.model = MODEL_PRIMARY
         self.session_id = None
-        self.is_first_message = True
         self.debug = DEBUG_MODE
-        self.system_prompt = BASE_PROMPT + ("\n\n" + ANDROID_CAPABILITIES if ANDROID_CAPABILITIES else "")
-        self._flutter_push_fn = None
 
     def set_session(self, session_id: int):
         self.session_id = session_id
@@ -63,69 +46,46 @@ class Agent:
     def set_debug(self, enabled: bool):
         self.debug = enabled
 
-    def set_flutter_push(self, fn):
-        self._flutter_push_fn = fn
-
     def think(self, user_input: str, tool_result: str = None) -> str:
         if user_input.strip().lower() == "debug on":
             self.set_debug(True)
-            return "Debug mode enabled."
+            return "Debug on."
         if user_input.strip().lower() == "debug off":
             self.set_debug(False)
-            return "Debug mode disabled."
-
-        # Intercept pending WhatsApp contact confirmation
-        if IS_ANDROID:
-            from tools.activity_log import get_pending_whatsapp, confirm_and_send
-            if get_pending_whatsapp() and self._flutter_push_fn:
-                result = confirm_and_send(user_input.strip(), self._flutter_push_fn)
-                if result:
-                    log_conversation("user", user_input)
-                    log_conversation("agent", result)
-                    self.conversation_history.append({"role": "user", "content": user_input})
-                    self.conversation_history.append({"role": "assistant", "content": result})
-                    return result
+            return "Debug off."
 
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
         context = build_context(user_input)
-
         if self.debug and context:
             print(f"[Debug] Context:\n{context}")
 
-        messages = [{"role": "system", "content": self.system_prompt}]
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         if context:
             messages.append({
                 "role": "system",
-                "content": f"Memory context — use this to personalize your response:\n{context}"
+                "content": f"Memory — use this to personalise your response:\n{context}"
             })
 
         if tool_result:
             messages.append({
                 "role": "system",
-                "content": f"TOOL RESULT — this is real live data you just fetched. Use it directly to answer the user. Do NOT say you can't access this — you already did:\n\n{tool_result}"
+                "content": f"TOOL RESULT — real live data you just fetched. Use it directly. Do not say you can't access this:\n\n{tool_result}"
             })
 
         messages.extend(self.conversation_history)
         messages.append({"role": "user", "content": user_input})
 
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=1000,
-            temperature=0.85
-        )
+        response = self._call_groq(messages)
+        response = self._clean_response(response)
 
-        agent_response = response.choices[0].message.content
-        agent_response = self._clean_response(agent_response)
-
-        store_conversation("agent", agent_response)
-        log_conversation("agent", agent_response)
+        store_conversation("agent", response)
+        log_conversation("agent", response)
         log_action(
             action="respond",
-            reasoning=f"User said: '{user_input[:50]}' - generated response",
+            reasoning=f"User: '{user_input[:50]}' — generated response",
             confidence="HIGH"
         )
 
@@ -142,13 +102,36 @@ class Agent:
                     print(f"[Debug Topic: {topic}]")
 
         self.conversation_history.append({"role": "user", "content": user_input})
-        self.conversation_history.append({"role": "assistant", "content": agent_response})
+        self.conversation_history.append({"role": "assistant", "content": response})
 
         if len(self.conversation_history) > MAX_HISTORY * 2:
             self.conversation_history = self.conversation_history[-(MAX_HISTORY * 2):]
 
-        self.is_first_message = False
-        return agent_response
+        return response
+
+    def _call_groq(self, messages: list) -> str:
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=1000,
+                temperature=0.85
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if "rate_limit" in str(e).lower() or "429" in str(e):
+                print(f"[Groq] Rate limit hit, falling back to {MODEL_FALLBACK}")
+                try:
+                    response = client.chat.completions.create(
+                        model=MODEL_FALLBACK,
+                        messages=messages,
+                        max_tokens=1000,
+                        temperature=0.85
+                    )
+                    return response.choices[0].message.content
+                except Exception as e2:
+                    return f"Both models unavailable right now: {e2}"
+            return f"Groq error: {e}"
 
     def _detect_topic_local(self, user_input: str) -> str:
         stop_words = {
@@ -170,9 +153,7 @@ class Agent:
         }
         words = re.findall(r'\w+', user_input.lower())
         meaningful = [w for w in words if w not in stop_words and len(w) > 2]
-        if not meaningful:
-            return None
-        return " ".join(meaningful[:2]) or None
+        return " ".join(meaningful[:2]) if meaningful else None
 
     def _clean_response(self, text: str) -> str:
         text = re.sub(r'\*+', '', text)

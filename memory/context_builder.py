@@ -2,19 +2,30 @@ import re
 from memory.memory_manager import recall_relevant, recall_patterns
 from memory.pattern_engine import get_all_categories
 
+# Minimum word overlap score to include a memory
+MEMORY_THRESHOLD = 2
+PATTERN_THRESHOLD = 2
+
+
 def build_context(user_input: str) -> str:
     context_parts = []
+    input_words = _meaningful_words(user_input)
 
-    # Past conversations
-    past_memories = recall_relevant(user_input, limit=3)
-    if past_memories:
-        context_parts.append("Relevant past conversations:")
-        for mem in past_memories:
-            context_parts.append(
-                f"  [{mem['role']} at {mem['timestamp']}]: {mem['message']}"
-            )
+    # Only pull past conversations if strong keyword match
+    if input_words:
+        past_memories = recall_relevant(user_input, limit=5)
+        strong_memories = [
+            m for m in past_memories
+            if _score(input_words, m.get("message", "")) >= MEMORY_THRESHOLD
+        ]
+        if strong_memories:
+            context_parts.append("Relevant past conversations:")
+            for mem in strong_memories[:3]:
+                context_parts.append(
+                    f"  [{mem['role']} at {mem['timestamp']}]: {mem['message']}"
+                )
 
-    # Collect all patterns
+    # Only inject patterns with strong relevance
     categories = get_all_categories()
     all_patterns = []
     for category in categories:
@@ -22,27 +33,17 @@ def build_context(user_input: str) -> str:
         for p in patterns:
             all_patterns.append({"category": category, "pattern": p})
 
-    # Local relevance scoring — no API call
-    if all_patterns:
-        relevant = _local_relevance_check(user_input, all_patterns)
+    if all_patterns and input_words:
+        relevant = _score_patterns(input_words, all_patterns)
         if relevant:
-            context_parts.append("\nKnown facts about the user:")
+            context_parts.append("\nKnown facts about you:")
             for item in relevant:
                 context_parts.append(f"  [{item['category']}]: {item['pattern']}")
 
-    if not context_parts:
-        return ""
+    return "\n".join(context_parts) if context_parts else ""
 
-    return "\n".join(context_parts)
 
-def _local_relevance_check(user_input: str, patterns: list) -> list:
-    """Score pattern relevance locally using keyword overlap.
-    No API call — fast, free, runs on any platform."""
-
-    if not patterns:
-        return []
-
-    # Extract meaningful words from user input
+def _meaningful_words(text: str) -> set:
     stop_words = {
         "i", "me", "my", "you", "your", "the", "a", "an", "is", "are",
         "was", "were", "be", "been", "being", "have", "has", "had", "do",
@@ -58,38 +59,32 @@ def _local_relevance_check(user_input: str, patterns: list) -> list:
         "some", "such", "only", "own", "same", "too", "hey", "hi",
         "hello", "ok", "okay", "yeah", "yep", "nah", "nope", "please",
         "thanks", "thank", "like", "really", "actually", "gonna", "wanna",
-        "gotta", "kinda", "dont", "im", "ive", "whats", "thats",
+        "gotta", "kinda", "dont", "im", "ive", "whats", "thats", "u", "ur",
+        "tell", "give", "show", "find", "look", "get", "let", "know",
+        "name", "list", "thing", "things", "something", "anything",
     }
+    words = set(re.findall(r'\w+', text.lower()))
+    return words - stop_words
 
-    input_words = set(re.findall(r'\w+', user_input.lower()))
-    input_words -= stop_words
 
-    if not input_words:
-        # No meaningful words — return top 3 most recent patterns as general context
-        return patterns[:3]
+def _score(input_words: set, text: str) -> int:
+    text_words = set(re.findall(r'\w+', text.lower()))
+    return len(input_words & text_words)
 
+
+def _score_patterns(input_words: set, patterns: list) -> list:
     scored = []
     for pattern in patterns:
         pattern_text = f"{pattern['category']} {pattern['pattern']}".lower()
         pattern_words = set(re.findall(r'\w+', pattern_text))
-        pattern_words -= stop_words
-
-        # Score = number of overlapping meaningful words
-        overlap = len(input_words & pattern_words)
-
-        # Boost score for category match
         category_words = set(re.findall(r'\w+', pattern['category'].lower()))
+
+        overlap = len(input_words & pattern_words)
         category_overlap = len(input_words & category_words)
         score = overlap + (category_overlap * 2)
 
-        if score > 0:
+        if score >= PATTERN_THRESHOLD:
             scored.append((score, pattern))
 
-    if not scored:
-        # No keyword matches — include personality/preference patterns as fallback
-        fallback_categories = {"personality", "preferences", "habits", "food", "music"}
-        fallback = [p for p in patterns if p["category"].lower() in fallback_categories]
-        return fallback[:3]
-
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [p for _, p in scored[:5]]
+    return [p for _, p in scored[:4]]

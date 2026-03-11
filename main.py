@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 from threading import Lock
 
 os.system('clear')
@@ -16,7 +17,11 @@ def safe_print(*args, **kwargs):
         print(*args, **kwargs)
 
 def speak(text: str):
-    os.system(f'termux-tts-speak "{text}"')
+    subprocess.Popen(
+        ['termux-tts-speak', text],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
 def main():
     agent = Agent()

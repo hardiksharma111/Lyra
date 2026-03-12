@@ -1,4 +1,5 @@
 import re
+import json
 from groq import Groq
 from logs.logger import log_conversation, log_action
 from logs.session import log_topic
@@ -9,6 +10,7 @@ from memory.context_builder import build_context
 MODEL_PRIMARY = "llama-3.3-70b-versatile"
 MODEL_FALLBACK = "llama3-8b-8192"
 MAX_HISTORY = 30
+MAX_AGENT_STEPS = 5
 DEBUG_MODE = False
 
 def _load_key(name: str) -> str:
@@ -32,6 +34,43 @@ You run on Hardik's Android phone. You can read his screen, notifications, Whats
 Never make up or guess screen content or app state. Only report what tools actually return.
 If a tool returns empty, say you don't have that info right now — never invent it."""
 
+PLANNER_PROMPT = """You are Lyra's planning engine. Given a task, break it into steps using available tools.
+
+AVAILABLE TOOLS:
+- search [query]: web search for current info, news, facts, weather
+- run_code [code]: execute Python code, calculations
+- get_battery: battery status
+- get_whatsapp_messages [minutes]: read WhatsApp messages
+- send_whatsapp [contact] [message]: send WhatsApp message
+- check_notifications [minutes]: recent notifications
+- what_was_i_doing [minutes]: recent phone activity
+- get_recent_emails [account]: read emails (main/college)
+- search_emails [query] [account]: search emails
+- get_assignments: Google Classroom assignments
+- get_courses: course list
+- play_song [song] / play_artist [artist] / play_by_mood [mood]: Spotify
+- play_pause / next_track / previous_track: Spotify controls
+- none: no tool needed
+
+Output a JSON plan:
+{
+  "needs_tools": true/false,
+  "steps": [
+    {"tool": "tool_name", "params": {"key": "value"}, "reason": "why this step"},
+    {"tool": "tool_name", "params": {"key": "value"}, "reason": "why this step"}
+  ],
+  "direct_answer": "if needs_tools is false, answer directly here"
+}
+
+Rules:
+- If task needs live data or chaining → needs_tools: true, list steps in order
+- If task is just conversation or opinion → needs_tools: false, direct_answer
+- Max 5 steps
+- Each step builds on the previous one's result
+- For research tasks: search first, then synthesize
+- For assignment writing: get_assignments first, then search topic, then write
+- JSON only, no other text."""
+
 
 class Agent:
     def __init__(self):
@@ -47,6 +86,11 @@ class Agent:
         self.debug = enabled
 
     def think(self, user_input: str, tool_result: str = None) -> str:
+        """
+        Main entry point. Decides whether to use agentic loop or single-shot response.
+        Simple tool results come pre-fetched from tool_handler — just respond.
+        Complex multi-step tasks go through the agentic loop.
+        """
         if user_input.strip().lower() == "debug on":
             self.set_debug(True)
             return "Debug on."
@@ -57,35 +101,20 @@ class Agent:
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
-        context = build_context(user_input)
-        if self.debug and context:
-            print(f"[Debug] Context:\n{context}")
-
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-        if context:
-            messages.append({
-                "role": "system",
-                "content": f"Memory — use this to personalise your response:\n{context}"
-            })
-
+        # If tool_handler already ran a tool, just respond with that result
         if tool_result:
-            messages.append({
-                "role": "system",
-                "content": f"TOOL RESULT — real live data you just fetched. Use it directly. Do not say you can't access this:\n\n{tool_result}"
-            })
+            response = self._single_response(user_input, tool_result)
+        else:
+            # Decide: agentic loop or direct response
+            response = self._run_agentic(user_input)
 
-        messages.extend(self.conversation_history)
-        messages.append({"role": "user", "content": user_input})
-
-        response = self._call_groq(messages)
         response = self._clean_response(response)
 
         store_conversation("agent", response)
         log_conversation("agent", response)
         log_action(
             action="respond",
-            reasoning=f"User: '{user_input[:50]}' — generated response",
+            reasoning=f"User: '{user_input[:50]}'",
             confidence="HIGH"
         )
 
@@ -98,8 +127,6 @@ class Agent:
             topic = self._detect_topic_local(user_input)
             if topic:
                 log_topic(self.session_id, topic)
-                if self.debug:
-                    print(f"[Debug Topic: {topic}]")
 
         self.conversation_history.append({"role": "user", "content": user_input})
         self.conversation_history.append({"role": "assistant", "content": response})
@@ -108,6 +135,190 @@ class Agent:
             self.conversation_history = self.conversation_history[-(MAX_HISTORY * 2):]
 
         return response
+
+    def _run_agentic(self, user_input: str) -> str:
+        """
+        Agentic loop — plan steps, execute tools in sequence,
+        feed results back, produce final answer.
+        """
+        # Step 1: Plan
+        plan = self._plan(user_input)
+
+        if self.debug:
+            print(f"[Debug Plan]: {json.dumps(plan, indent=2)}")
+
+        # If no tools needed, answer directly
+        if not plan.get("needs_tools") or not plan.get("steps"):
+            direct = plan.get("direct_answer", "")
+            if direct:
+                return self._single_response(user_input, context_only=True)
+            return self._single_response(user_input)
+
+        # Step 2: Execute steps in sequence
+        step_results = []
+        steps = plan.get("steps", [])[:MAX_AGENT_STEPS]
+
+        for i, step in enumerate(steps):
+            tool = step.get("tool", "none")
+            params = step.get("params", {})
+            reason = step.get("reason", "")
+
+            if self.debug:
+                print(f"[Debug Step {i+1}]: {tool} — {reason}")
+
+            if tool == "none":
+                continue
+
+            result = self._execute_step(tool, params)
+
+            if result:
+                step_results.append({
+                    "step": i + 1,
+                    "tool": tool,
+                    "reason": reason,
+                    "result": result[:2000]  # cap per step
+                })
+
+                if self.debug:
+                    print(f"[Debug Result {i+1}]: {result[:200]}...")
+
+        # Step 3: Synthesize all results into final response
+        if step_results:
+            return self._synthesize(user_input, step_results)
+
+        # Fallback if all steps returned nothing
+        return self._single_response(user_input)
+
+    def _plan(self, user_input: str) -> dict:
+        """Ask Groq to plan the steps needed for this task."""
+        try:
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": PLANNER_PROMPT},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=500,
+                temperature=0.3  # low temp for planning — be precise
+            )
+            result = response.choices[0].message.content.strip()
+            result = re.sub(r'```json|```', '', result).strip()
+            return json.loads(result)
+        except Exception as e:
+            if self.debug:
+                print(f"[Debug Planner error]: {e}")
+            return {"needs_tools": False, "steps": [], "direct_answer": ""}
+
+    def _execute_step(self, tool: str, params: dict) -> str | None:
+        """Execute a single tool step. Mirrors tool_handler but called internally."""
+        try:
+            from tools.search import search
+            from tools.code_executor import run_code
+            from tools.activity_log import (
+                what_was_i_doing, check_notifications,
+                get_whatsapp_messages, send_whatsapp, last_app_opened
+            )
+            from tools.spotify_control import (
+                play_pause, next_track, previous_track,
+                play_song, play_artist, play_by_mood
+            )
+            from tools.google_control import (
+                get_emails, search_emails, get_assignments, get_courses
+            )
+            import subprocess
+
+            if tool == "search":
+                return search(params.get("query", ""))
+            if tool == "run_code":
+                return run_code(params.get("code", ""))
+            if tool == "get_battery":
+                r = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
+                return r.stdout.strip()
+            if tool == "what_was_i_doing":
+                return what_was_i_doing(params.get("minutes", 60))
+            if tool == "last_app_opened":
+                return last_app_opened()
+            if tool == "check_notifications":
+                return check_notifications(params.get("app"), params.get("minutes", 60))
+            if tool == "get_whatsapp_messages":
+                return get_whatsapp_messages(params.get("minutes", 120))
+            if tool == "send_whatsapp":
+                return send_whatsapp(params.get("contact", ""), params.get("message", ""))
+            if tool == "get_recent_emails":
+                return get_emails(account=params.get("account", "main"))
+            if tool == "search_emails":
+                return search_emails(params.get("query", ""), params.get("account", "main"))
+            if tool == "get_assignments":
+                return str(get_assignments())
+            if tool == "get_courses":
+                return str(get_courses())
+            if tool == "play_song":
+                return play_song(params.get("song", ""))
+            if tool == "play_artist":
+                return play_artist(params.get("artist", ""))
+            if tool == "play_by_mood":
+                return play_by_mood(params.get("mood", "chill"))
+            if tool == "play_pause":
+                return play_pause()
+            if tool == "next_track":
+                return next_track()
+            if tool == "previous_track":
+                return previous_track()
+
+        except Exception as e:
+            if self.debug:
+                print(f"[Debug Step Error — {tool}]: {e}")
+            return None
+
+        return None
+
+    def _synthesize(self, user_input: str, step_results: list) -> str:
+        """Take all step results and produce a single coherent response."""
+        results_text = "\n\n".join([
+            f"Step {r['step']} ({r['tool']}): {r['result']}"
+            for r in step_results
+        ])
+
+        context = build_context(user_input)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        if context:
+            messages.append({
+                "role": "system",
+                "content": f"Memory:\n{context}"
+            })
+
+        messages.append({
+            "role": "system",
+            "content": f"You just executed a multi-step plan to answer the user. Here are all the results:\n\n{results_text}\n\nSynthesize these into a single natural response. Be concise. Don't list the steps — just answer like a friend who did the research."
+        })
+
+        messages.extend(self.conversation_history[-10:])  # last 5 exchanges only
+        messages.append({"role": "user", "content": user_input})
+
+        return self._call_groq(messages)
+
+    def _single_response(self, user_input: str, tool_result: str = None, context_only: bool = False) -> str:
+        """Standard single-shot response with optional tool result."""
+        context = build_context(user_input)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        if context:
+            messages.append({
+                "role": "system",
+                "content": f"Memory:\n{context}"
+            })
+
+        if tool_result:
+            messages.append({
+                "role": "system",
+                "content": f"TOOL RESULT — real live data. Use it directly:\n\n{tool_result}"
+            })
+
+        messages.extend(self.conversation_history)
+        messages.append({"role": "user", "content": user_input})
+
+        return self._call_groq(messages)
 
     def _call_groq(self, messages: list) -> str:
         try:
@@ -120,7 +331,8 @@ class Agent:
             return response.choices[0].message.content
         except Exception as e:
             if "rate_limit" in str(e).lower() or "429" in str(e):
-                print(f"[Groq] Rate limit hit, falling back to {MODEL_FALLBACK}")
+                if self.debug:
+                    print(f"[Groq] Rate limit — falling back to {MODEL_FALLBACK}")
                 try:
                     response = client.chat.completions.create(
                         model=MODEL_FALLBACK,
@@ -130,7 +342,7 @@ class Agent:
                     )
                     return response.choices[0].message.content
                 except Exception as e2:
-                    return f"Both models unavailable right now: {e2}"
+                    return f"Both models unavailable: {e2}"
             return f"Groq error: {e}"
 
     def _detect_topic_local(self, user_input: str) -> str:

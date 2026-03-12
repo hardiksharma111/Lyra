@@ -1,9 +1,9 @@
 import os
-import sys
 import subprocess
 from threading import Lock
+from core.platform import IS_ANDROID
 
-os.system('clear')
+os.system('cls' if os.name == 'nt' else 'clear')
 
 from core.agent import Agent
 from logs.session import start_session, end_session
@@ -17,11 +17,13 @@ def safe_print(*args, **kwargs):
         print(*args, **kwargs)
 
 def speak(text: str):
-    subprocess.Popen(
-        ['termux-tts-speak', text],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+    if IS_ANDROID:
+        subprocess.Popen(
+            ['termux-tts-speak', text],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    # Windows — no TTS for now, text only
 
 def main():
     agent = Agent()
@@ -29,7 +31,8 @@ def main():
     agent.set_session(session_id)
     should_exit = [False]
 
-    safe_print("Lyra ready.")
+    platform_label = "Android" if IS_ANDROID else "Windows"
+    safe_print(f"Lyra ready. [{platform_label}]")
     safe_print("Commands: 'profile' | 'categories' | 'debug on/off' | 'goodbye'")
     safe_print("-" * 40)
 

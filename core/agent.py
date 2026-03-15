@@ -1,3 +1,4 @@
+from memory.self_improvement import log_error, get_suggestions, get_errors, approve, list_pending
 import re
 import json
 from groq import Groq
@@ -32,7 +33,8 @@ Short responses unless detail is actually needed.
 Don't ask unnecessary clarifying questions — use memory and make smart assumptions.
 You run on Hardik's Android phone. You can read his screen, notifications, WhatsApp messages, and activity log via tools.
 Never make up or guess screen content or app state. Only report what tools actually return.
-If a tool returns empty, say you don't have that info right now — never invent it."""
+If a tool returns empty, say you don't have that info right now — never invent it.
+Never say 'we went over this' or 'as I mentioned' or reference past conversations unless the user explicitly brings them up first."""
 
 PLANNER_PROMPT = """You are Lyra's planning engine. Given a task, break it into steps using available tools.
 
@@ -86,11 +88,6 @@ class Agent:
         self.debug = enabled
 
     def think(self, user_input: str, tool_result: str = None) -> str:
-        """
-        Main entry point. Decides whether to use agentic loop or single-shot response.
-        Simple tool results come pre-fetched from tool_handler — just respond.
-        Complex multi-step tasks go through the agentic loop.
-        """
         if user_input.strip().lower() == "debug on":
             self.set_debug(True)
             return "Debug on."
@@ -98,25 +95,62 @@ class Agent:
             self.set_debug(False)
             return "Debug off."
 
+        if user_input.strip().lower() == "suggestions":
+            items = get_suggestions()
+            if not items:
+                return "No suggestions right now."
+            return " | ".join([f"{s['tool']}: {s['suggestion']}" for s in items])
+
+        if user_input.strip().lower() == "errors":
+            items = get_errors(5)
+            if not items:
+                return "No errors logged."
+            return " | ".join([f"[{e['timestamp']}] {e['tool']}: {e['error'][:80]}" for e in items])
+
+        if user_input.strip().lower().startswith("approve "):
+            name = user_input.strip()[8:].strip()
+            return approve(name)
+
+        if user_input.strip().lower() == "pending":
+            items = list_pending()
+            return f"Pending approvals: {', '.join(items)}" if items else "Nothing pending."
+
+        if user_input.strip().lower().startswith("remind me"):
+            m = re.search(r'remind me (?:at |in )?([\d:apm ]+(?:minutes?|hours?)?)\s+(?:to\s+)?(.+)', user_input, re.IGNORECASE)
+            if m:
+                time_str = m.group(1).strip()
+                task = m.group(2).strip()
+                from memory.scheduler import add_reminder
+                return add_reminder(task, time_str)
+            return "Try: remind me at 6pm to study"
+
+        if user_input.strip().lower().startswith("set briefing"):
+            m = re.search(r'set briefing (?:at )?([\d:apm ]+)', user_input, re.IGNORECASE)
+            if m:
+                from memory.scheduler import set_briefing_time
+                return set_briefing_time(m.group(1).strip())
+            return "Try: set briefing at 8am"
+
+        if user_input.strip().lower() == "reminders":
+            from memory.scheduler import get_reminders
+            items = get_reminders()
+            if not items:
+                return "No pending reminders."
+            return " | ".join([f"{r['time']}: {r['text']}" for r in items])
+
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
-        # If tool_handler already ran a tool, just respond with that result
         if tool_result:
             response = self._single_response(user_input, tool_result)
         else:
-            # Decide: agentic loop or direct response
             response = self._run_agentic(user_input)
 
         response = self._clean_response(response)
 
         store_conversation("agent", response)
         log_conversation("agent", response)
-        log_action(
-            action="respond",
-            reasoning=f"User: '{user_input[:50]}'",
-            confidence="HIGH"
-        )
+        log_action(action="respond", reasoning=f"User: '{user_input[:50]}'", confidence="HIGH")
 
         learned = analyze_and_store(user_input)
         if self.debug and learned:
@@ -137,24 +171,17 @@ class Agent:
         return response
 
     def _run_agentic(self, user_input: str) -> str:
-        """
-        Agentic loop — plan steps, execute tools in sequence,
-        feed results back, produce final answer.
-        """
-        # Step 1: Plan
         plan = self._plan(user_input)
 
         if self.debug:
             print(f"[Debug Plan]: {json.dumps(plan, indent=2)}")
 
-        # If no tools needed, answer directly
         if not plan.get("needs_tools") or not plan.get("steps"):
             direct = plan.get("direct_answer", "")
             if direct:
                 return self._single_response(user_input, context_only=True)
             return self._single_response(user_input)
 
-        # Step 2: Execute steps in sequence
         step_results = []
         steps = plan.get("steps", [])[:MAX_AGENT_STEPS]
 
@@ -176,21 +203,18 @@ class Agent:
                     "step": i + 1,
                     "tool": tool,
                     "reason": reason,
-                    "result": result[:2000]  # cap per step
+                    "result": result[:2000]
                 })
 
                 if self.debug:
                     print(f"[Debug Result {i+1}]: {result[:200]}...")
 
-        # Step 3: Synthesize all results into final response
         if step_results:
             return self._synthesize(user_input, step_results)
 
-        # Fallback if all steps returned nothing
         return self._single_response(user_input)
 
     def _plan(self, user_input: str) -> dict:
-        """Ask Groq to plan the steps needed for this task."""
         try:
             response = client.chat.completions.create(
                 model=self.model,
@@ -199,7 +223,7 @@ class Agent:
                     {"role": "user", "content": user_input}
                 ],
                 max_tokens=500,
-                temperature=0.3  # low temp for planning — be precise
+                temperature=0.3
             )
             result = response.choices[0].message.content.strip()
             result = re.sub(r'```json|```', '', result).strip()
@@ -210,7 +234,6 @@ class Agent:
             return {"needs_tools": False, "steps": [], "direct_answer": ""}
 
     def _execute_step(self, tool: str, params: dict) -> str | None:
-        """Execute a single tool step. Mirrors tool_handler but called internally."""
         try:
             from tools.search import search
             from tools.code_executor import run_code
@@ -237,7 +260,7 @@ class Agent:
             if tool == "what_was_i_doing":
                 return what_was_i_doing(params.get("minutes", 60))
             if tool == "last_app_opened":
-                return last_app_opened()
+                return last_app_operated()
             if tool == "check_notifications":
                 return check_notifications(params.get("app"), params.get("minutes", 60))
             if tool == "get_whatsapp_messages":
@@ -268,12 +291,12 @@ class Agent:
         except Exception as e:
             if self.debug:
                 print(f"[Debug Step Error — {tool}]: {e}")
+            log_error(tool, e)
             return None
 
         return None
 
     def _synthesize(self, user_input: str, step_results: list) -> str:
-        """Take all step results and produce a single coherent response."""
         results_text = "\n\n".join([
             f"Step {r['step']} ({r['tool']}): {r['result']}"
             for r in step_results
@@ -293,13 +316,12 @@ class Agent:
             "content": f"You just executed a multi-step plan to answer the user. Here are all the results:\n\n{results_text}\n\nSynthesize these into a single natural response. Be concise. Don't list the steps — just answer like a friend who did the research."
         })
 
-        messages.extend(self.conversation_history[-10:])  # last 5 exchanges only
+        messages.extend(self.conversation_history[-10:])
         messages.append({"role": "user", "content": user_input})
 
         return self._call_groq(messages)
 
     def _single_response(self, user_input: str, tool_result: str = None, context_only: bool = False) -> str:
-        """Standard single-shot response with optional tool result."""
         context = build_context(user_input)
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 

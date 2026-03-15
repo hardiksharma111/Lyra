@@ -6,7 +6,7 @@ from datetime import datetime
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-IS_ANDROID = os.path.exists("/data/data/com.termux")
+IS_ANDROID = os.path.exists("/data/data/com.termux") or os.name == 'nt'
 
 MEMORY_DIR = "memory"
 os.makedirs(MEMORY_DIR, exist_ok=True)

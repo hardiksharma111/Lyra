@@ -29,6 +29,8 @@ def main():
     agent = Agent()
     session_id = start_session()
     agent.set_session(session_id)
+    from memory.scheduler import start_scheduler
+    start_scheduler(speak, agent)
     should_exit = [False]
 
     platform_label = "Android" if IS_ANDROID else "Windows"

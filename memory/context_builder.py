@@ -3,8 +3,8 @@ from memory.memory_manager import recall_relevant, recall_patterns
 from memory.pattern_engine import get_all_categories
 
 # Minimum word overlap score to include a memory
-MEMORY_THRESHOLD = 2
-PATTERN_THRESHOLD = 2
+MEMORY_THRESHOLD = 4
+PATTERN_THRESHOLD = 3
 
 
 def build_context(user_input: str) -> str:
@@ -19,10 +19,10 @@ def build_context(user_input: str) -> str:
             if _score(input_words, m.get("message", "")) >= MEMORY_THRESHOLD
         ]
         if strong_memories:
-            context_parts.append("Relevant past conversations:")
+            context_parts.append("Relevant past conversations (DO NOT claim these are recent unless timestamp matches today):")
             for mem in strong_memories[:3]:
                 context_parts.append(
-                    f"  [{mem['role']} at {mem['timestamp']}]: {mem['message']}"
+                    f"  [{mem['role']} — {mem['timestamp']}]: {mem['message']}"
                 )
 
     # Only inject patterns with strong relevance

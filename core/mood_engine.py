@@ -78,12 +78,12 @@ def detect_mood(user_input: str) -> str:
     # Priority order
     if has_distress:
         return "concerned"
-    if has_alert:
+    if has_curiosity and is_long:
+        return "curious"
+    if has_alert and not has_curiosity:
         return "alert"
     if has_focus and is_work_hours:
         return "focused"
-    if has_curiosity and is_long:
-        return "curious"
     if is_late_night and (is_very_short or rapid_messages):
         return "playful"
     if rapid_messages and is_very_short:
@@ -137,4 +137,4 @@ def build_mood_context(user_input: str) -> dict:
         "sarcastic": is_sarcastic,
         "time": time_ctx,
         "tone_instruction": tone,
-    }
+    }   

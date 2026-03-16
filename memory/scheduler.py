@@ -2,7 +2,8 @@ import os
 import json
 import time
 import threading
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 
 MEMORY_DIR = "memory"
 REMINDERS_FILE = os.path.join(MEMORY_DIR, "reminders.json")
@@ -23,8 +24,38 @@ def _save(path, data):
         json.dump(data, f, indent=2)
 
 
+def _parse_time(time_str: str) -> str | None:
+    now = datetime.now()
+    time_str = time_str.strip().lower()
+
+    # "in X minutes/hours"
+    m = re.match(r'in\s+(\d+)\s+(minutes?|hours?)', time_str)
+    if m:
+        amount = int(m.group(1))
+        unit = m.group(2)
+        delta = timedelta(minutes=amount) if "minute" in unit else timedelta(hours=amount)
+        return (now + delta).strftime("%Y-%m-%d %H:%M")
+
+    # "6pm", "6:30pm", "18:00"
+    if any(x in time_str for x in ["am", "pm", ":"]) or time_str.isdigit():
+        m = re.match(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', time_str)
+        if m:
+            hour = int(m.group(1))
+            minute = int(m.group(2)) if m.group(2) else 0
+            period = m.group(3)
+            if period == "pm" and hour != 12:
+                hour += 12
+            if period == "am" and hour == 12:
+                hour = 0
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target < now:
+                target += timedelta(days=1)
+            return target.strftime("%Y-%m-%d %H:%M")
+
+    return None
+
+
 def add_reminder(text: str, time_str: str) -> str:
-    """Parse time string like '6pm', '18:00', 'in 30 minutes' and schedule."""
     target = _parse_time(time_str)
     if not target:
         return f"Couldn't parse time: {time_str}"
@@ -39,39 +70,6 @@ def add_reminder(text: str, time_str: str) -> str:
     return f"Reminder set for {target}: {text}"
 
 
-def _parse_time(time_str: str) -> str | None:
-    import re
-    now = datetime.now()
-    time_str = time_str.strip().lower()
-
-    # "in X minutes/hours"
-    m = re.match(r'in (\d+) (minute|minutes|hour|hours)', time_str)
-    if m:
-        amount = int(m.group(1))
-        unit = m.group(2)
-        from datetime import timedelta
-        delta = timedelta(minutes=amount) if "minute" in unit else timedelta(hours=amount)
-        return (now + delta).strftime("%Y-%m-%d %H:%M")
-
-    # "6pm", "6:30pm", "18:00"
-    m = re.match(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', time_str)
-    if m:
-        hour = int(m.group(1))
-        minute = int(m.group(2)) if m.group(2) else 0
-        period = m.group(3)
-        if period == "pm" and hour != 12:
-            hour += 12
-        if period == "am" and hour == 12:
-            hour = 0
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target < now:
-            from datetime import timedelta
-            target += timedelta(days=1)
-        return target.strftime("%Y-%m-%d %H:%M")
-
-    return None
-
-
 def set_briefing_time(time_str: str) -> str:
     target = _parse_time(time_str)
     if not target:
@@ -83,44 +81,40 @@ def set_briefing_time(time_str: str) -> str:
 
 
 def get_reminders() -> list:
-    return [r for r in _load(REMINDERS_FILE) if not r.get("fired")]
+    data = _load(REMINDERS_FILE)
+    if not isinstance(data, list):
+        return []
+    return [r for r in data if not r.get("fired")]
 
 
 def _run_briefing(speak_fn, agent):
-    """Run morning briefing — chain weather + assignments + emails."""
     try:
         from tools.search import search
         from tools.google_control import get_assignments, get_emails
         parts = []
-
         weather = search("weather today")
         if weather:
             parts.append(weather[:300])
-
         assignments = get_assignments()
         if assignments:
             parts.append(f"Assignments: {str(assignments)[:300]}")
-
         emails = get_emails(account="main")
         if emails:
             parts.append(f"Emails: {str(emails)[:300]}")
-
         if parts:
             summary = agent.think("Give me a quick morning briefing based on this: " + " | ".join(parts))
             speak_fn(summary)
-    except Exception as e:
+    except Exception:
         pass
 
 
 def start_scheduler(speak_fn, agent):
-    """Start background scheduler thread."""
     def _loop():
         while True:
             try:
                 now = datetime.now()
                 now_str = now.strftime("%Y-%m-%d %H:%M")
 
-                # Check reminders
                 reminders = _load(REMINDERS_FILE)
                 changed = False
                 for r in reminders:
@@ -131,18 +125,16 @@ def start_scheduler(speak_fn, agent):
                 if changed:
                     _save(REMINDERS_FILE, reminders)
 
-                # Check morning briefing
                 config = _load(BRIEFING_CONFIG) if os.path.exists(BRIEFING_CONFIG) else {}
                 if config.get("enabled") and config.get("time"):
-                    briefing_time = config["time"]
-                    if now.strftime("%H:%M") == briefing_time:
+                    if now.strftime("%H:%M") == config["time"]:
                         _run_briefing(speak_fn, agent)
-                        time.sleep(61)  # prevent double-fire
+                        time.sleep(61)
 
             except Exception:
                 pass
 
-            time.sleep(30)  # check every 30 seconds
+            time.sleep(30)
 
     t = threading.Thread(target=_loop, daemon=True)
     t.start()

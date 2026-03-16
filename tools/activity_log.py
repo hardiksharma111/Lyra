@@ -72,7 +72,7 @@ def log_event(event: dict):
         _activity_log = _activity_log[-MAX_ENTRIES:]
 
 def read_log(minutes=60):
-    cutoff = time.time() * 1000 - (minutes * 60 * 1000)
+    cutoff = time.time() * 1000 - (int(minutes) * 60 * 1000)
     return [e for e in _activity_log if e.get("ts", 0) >= cutoff]
 
 def last_app_opened():
@@ -82,7 +82,7 @@ def last_app_opened():
     return None
 
 def what_was_i_doing(minutes=60):
-    entries = read_log(minutes)
+    entries = read_log(int(minutes))
     if not entries:
         return f"No activity recorded in the past {minutes} minutes. Make sure Lyra has been running."
     app_opens = [e for e in entries if e.get("type") == "app_open"]
@@ -96,7 +96,7 @@ def what_was_i_doing(minutes=60):
     return "\n".join(summary) if summary else "No significant activity."
 
 def check_notifications(app=None, minutes=60):
-    entries = read_log(minutes)
+    entries = read_log(int(minutes))
     notifs = [e for e in entries if e.get("type") == "notification"]
     if app:
         notifs = [e for e in notifs if app.lower() in e.get("app", "").lower()]

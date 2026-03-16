@@ -4,9 +4,10 @@ import json
 from groq import Groq
 from logs.logger import log_conversation, log_action
 from logs.session import log_topic
-from memory.memory_manager import store_conversation
+from memory.memory_manager import store_conversation, recall_patterns
 from memory.pattern_engine import analyze_and_store
 from memory.context_builder import build_context
+from core.mood_engine import build_mood_context, learn_sarcasm
 
 MODEL_PRIMARY = "llama-3.3-70b-versatile"
 MODEL_FALLBACK = "llama3-8b-8192"
@@ -34,7 +35,8 @@ Don't ask unnecessary clarifying questions — use memory and make smart assumpt
 You run on Hardik's Android phone. You can read his screen, notifications, WhatsApp messages, and activity log via tools.
 Never make up or guess screen content or app state. Only report what tools actually return.
 If a tool returns empty, say you don't have that info right now — never invent it.
-Never say 'we went over this' or 'as I mentioned' or reference past conversations unless the user explicitly brings them up first."""
+Never say 'we went over this' or 'as I mentioned' or reference past conversations unless the user explicitly brings them up first.
+Never pretend to update internal settings based on user requests — only actual commands do that."""
 
 PLANNER_PROMPT = """You are Lyra's planning engine. Given a task, break it into steps using available tools.
 
@@ -116,13 +118,22 @@ class Agent:
             return f"Pending approvals: {', '.join(items)}" if items else "Nothing pending."
 
         if user_input.strip().lower().startswith("remind me"):
-            m = re.search(r'remind me (?:at |in )?([\d:apm ]+(?:minutes?|hours?)?)\s+(?:to\s+)?(.+)', user_input, re.IGNORECASE)
-            if m:
-                time_str = m.group(1).strip()
-                task = m.group(2).strip()
-                from memory.scheduler import add_reminder
-                return add_reminder(task, time_str)
-            return "Try: remind me at 6pm to study"
+            from memory.scheduler import add_reminder
+            text = user_input.strip()
+            time_match = re.search(
+                r'(in\s+\d+\s+(?:minutes?|hours?)|\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{2}:\d{2})',
+                text, re.IGNORECASE
+            )
+            if time_match:
+                time_str = time_match.group(1).strip()
+                task = text
+                task = re.sub(r'remind me', '', task, flags=re.IGNORECASE).strip()
+                task = re.sub(re.escape(time_str), '', task, flags=re.IGNORECASE).strip()
+                task = re.sub(r'^(at|in|to)\s+', '', task, flags=re.IGNORECASE).strip()
+                task = re.sub(r'\s+(at|in)\s*$', '', task, flags=re.IGNORECASE).strip()
+                if task:
+                    return add_reminder(task, time_str)
+            return "Try: remind me at 6pm to study, or remind me in 30 minutes to call mom"
 
         if user_input.strip().lower().startswith("set briefing"):
             m = re.search(r'set briefing (?:at )?([\d:apm ]+)', user_input, re.IGNORECASE)
@@ -137,6 +148,27 @@ class Agent:
             if not items:
                 return "No pending reminders."
             return " | ".join([f"{r['time']}: {r['text']}" for r in items])
+
+        if user_input.strip().lower() == "mood":
+            from core.mood_engine import detect_mood, get_time_context
+            mood = detect_mood(user_input)
+            time_ctx = get_time_context()
+            return f"Current read: {mood} mood, {time_ctx}."
+
+        if user_input.strip().lower().startswith("that was sarcasm"):
+            last_user = next(
+                (m["content"] for m in reversed(self.conversation_history) if m["role"] == "user"),
+                None
+            )
+            if last_user:
+                learn_sarcasm(last_user.lower().strip())
+                try:
+                    from memory.memory_manager import store_pattern
+                    store_pattern(last_user.lower().strip(), "sarcasm")
+                except Exception:
+                    pass
+                return f"Got it. I'll read '{last_user}' as sarcasm from now on."
+            return "No recent message to learn from."
 
         log_conversation("user", user_input)
         store_conversation("user", user_input)
@@ -260,7 +292,7 @@ class Agent:
             if tool == "what_was_i_doing":
                 return what_was_i_doing(params.get("minutes", 60))
             if tool == "last_app_opened":
-                return last_app_operated()
+                return last_app_opened()
             if tool == "check_notifications":
                 return check_notifications(params.get("app"), params.get("minutes", 60))
             if tool == "get_whatsapp_messages":
@@ -296,6 +328,38 @@ class Agent:
 
         return None
 
+    def _build_dynamic_system(self, user_input: str) -> str:
+        mood_ctx = build_mood_context(user_input)
+        dynamic = SYSTEM_PROMPT
+        dynamic += f"\n\nCurrent tone: {mood_ctx['tone_instruction']}"
+        dynamic += f"\nTime of day: {mood_ctx['time']}."
+
+        if mood_ctx["sarcastic"]:
+            dynamic += "\nHardik's last message appears sarcastic — read it as the opposite of face value."
+
+        if mood_ctx["mood"] == "concerned":
+            dynamic += "\nHardik seems stressed or off. Be warmer than usual. Don't push tasks or suggestions."
+            try:
+                food = recall_patterns("food", limit=2)
+                hobbies = recall_patterns("hobbies", limit=2)
+                comfort = recall_patterns("comfort", limit=2)
+                bits = []
+                if food:
+                    bits.append(f"food he likes: {', '.join(food)}")
+                if hobbies:
+                    bits.append(f"things he enjoys: {', '.join(hobbies)}")
+                if comfort:
+                    bits.append(f"what helps him: {', '.join(comfort)}")
+                if bits:
+                    dynamic += f"\nPersonalized comfort context: {'; '.join(bits)}. Use this naturally — don't list it."
+            except Exception:
+                pass
+
+        if self.debug:
+            print(f"[Debug Mood]: {mood_ctx['mood']} | sarcasm={mood_ctx['sarcastic']} | time={mood_ctx['time']}")
+
+        return dynamic
+
     def _synthesize(self, user_input: str, step_results: list) -> str:
         results_text = "\n\n".join([
             f"Step {r['step']} ({r['tool']}): {r['result']}"
@@ -303,7 +367,8 @@ class Agent:
         ])
 
         context = build_context(user_input)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        dynamic_system = self._build_dynamic_system(user_input)
+        messages = [{"role": "system", "content": dynamic_system}]
 
         if context:
             messages.append({
@@ -323,7 +388,8 @@ class Agent:
 
     def _single_response(self, user_input: str, tool_result: str = None, context_only: bool = False) -> str:
         context = build_context(user_input)
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        dynamic_system = self._build_dynamic_system(user_input)
+        messages = [{"role": "system", "content": dynamic_system}]
 
         if context:
             messages.append({

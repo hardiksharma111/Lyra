@@ -21,6 +21,13 @@ from tools.code_executor import run_code
 
 MODEL = "llama-3.3-70b-versatile"
 
+# These are handled by agent.py before tool_handler is called.
+# Never route them to tools.
+RESERVED_COMMANDS = {
+    "mood", "debug on", "debug off", "suggestions", "errors", "pending",
+    "reminders", "profile", "categories",
+}
+
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -64,10 +71,16 @@ DECISION RULES (apply in order):
 1. Needs current/live data (weather, news, prices, scores, facts, anything happening now) → search
 2. Needs math, calculation, conversion, or code → run_code
 3. Asks about phone activity, notifications, WhatsApp → matching phone tool
-4. Asks about music/Spotify → matching Spotify tool
+4. Asks about music/Spotify → matching Spotify tool — ONLY if the message contains words like play, song, music, artist, playlist, spotify, skip, pause, volume, track
 5. Asks about email, assignments → matching Google tool
 6. Says goodbye/exit/bye/later → exit
 7. Everything else → none
+
+STRICT RULES:
+- Single words like "mood", "ok", "so", "yeah", "yup", "cool", "nice" → always none
+- "mood" alone is NEVER a Spotify command — it is a system command, always none
+- Only use Spotify tools when the user is clearly asking to control or play music
+- When in doubt → none
 
 Respond with JSON only — no other text:
 {{"tool": "tool_name", "params": {{}}, "confidence": "high/medium/low"}}
@@ -138,6 +151,14 @@ def execute_tool(tool: str, params: dict) -> str | None:
 
 
 def handle_tool(user_input: str) -> tuple[str | None, bool]:
+    # Never route reserved commands to tools — agent.py handles them
+    if user_input.strip().lower() in RESERVED_COMMANDS:
+        return None, False
+
+    # Never route sarcasm learning command
+    if user_input.strip().lower().startswith("that was sarcasm"):
+        return None, False
+
     intent = detect_intent(user_input)
     tool = intent.get("tool", "none")
     params = intent.get("params", {})

@@ -43,7 +43,17 @@ if IS_ANDROID:
         def do_POST(self):
             try:
                 length = int(self.headers.get("Content-Length", 0))
-                body = _json.loads(self.rfile.read(length))
+                # Read in chunks to handle large audio payloads
+                chunks = []
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                raw = b"".join(chunks)
+                body = _json.loads(raw)
                 action = body.get("action")
                 response = b'{"status":"ok"}'
                 if action == "log_event":
@@ -59,9 +69,10 @@ if IS_ANDROID:
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(response)
-            except Exception:
+            except Exception as e:
                 self.send_response(500)
                 self.end_headers()
+                self.wfile.write(_json.dumps({"error": str(e)}).encode())
         def log_message(self, *args): pass  # silence access logs
 
     def start_event_server():

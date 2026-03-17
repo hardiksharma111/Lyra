@@ -62,10 +62,20 @@ if IS_ANDROID:
                 elif action == "transcribe":
                     from tools.voice_input import transcribe_base64
                     audio_b64 = body.get("audio", "")
-                    ext = body.get("ext", "m4a")
+                    ext = body.get("ext", "mp4")
                     transcript = transcribe_base64(audio_b64, ext)
                     import json as _j
                     response = _j.dumps({"status": "ok", "transcript": transcript}).encode()
+                elif action == "record_and_transcribe":
+                    import threading, json as _j
+                    result_holder = ["Recording..."]
+                    def do_record():
+                        from tools.voice_input import record_and_transcribe
+                        result_holder[0] = record_and_transcribe()
+                    t = threading.Thread(target=do_record)
+                    t.start()
+                    t.join(timeout=20)
+                    response = _j.dumps({"status": "ok", "transcript": result_holder[0]}).encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(response)

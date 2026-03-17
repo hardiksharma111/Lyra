@@ -16,25 +16,22 @@ def _load_key(name: str) -> str:
 client = Groq(api_key=_load_key("GROQ"))
 
 
-def transcribe_base64(audio_b64: str, ext: str = "m4a") -> str:
-    """
-    Receive base64-encoded audio from Flutter, decode, send to Groq Whisper.
-    Returns transcript string.
-    """
+def transcribe_base64(audio_b64: str, ext: str = "mp4") -> str:
     try:
         audio_bytes = base64.b64decode(audio_b64)
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
+        tmp_path = os.path.join(tempfile.gettempdir(), f"lyra_audio.{ext}")
+        with open(tmp_path, "wb") as f:
+            f.write(audio_bytes)
         try:
             with open(tmp_path, "rb") as f:
                 transcription = client.audio.transcriptions.create(
-                    file=(os.path.basename(tmp_path), f.read()),
+                    file=(f"audio.{ext}", f.read()),
                     model="whisper-large-v3",
                     language="en",
                     response_format="text"
                 )
-            return transcription.strip() if isinstance(transcription, str) else transcription
+            result = transcription.strip() if isinstance(transcription, str) else str(transcription)
+            return result
         finally:
             try:
                 os.remove(tmp_path)

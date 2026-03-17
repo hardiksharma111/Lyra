@@ -18,14 +18,13 @@ from tools.google_control import (
 )
 from tools.search import search
 from tools.code_executor import run_code
+from tools.file_tool import save_file, read_file, list_files
 
 MODEL = "llama-3.3-70b-versatile"
 
-# These are handled by agent.py before tool_handler is called.
-# Never route them to tools.
 RESERVED_COMMANDS = {
     "mood", "debug on", "debug off", "suggestions", "errors", "pending",
-    "reminders", "profile", "categories","benchmark"
+    "reminders", "profile", "categories", "benchmark", "list tasks", "list files",
 }
 
 
@@ -64,25 +63,28 @@ TOOLS:
 - get_recent_emails [account]: Gmail (account = main or college)
 - search_emails [query] [account]: search Gmail
 - get_assignments / get_courses: Google Classroom
+- save_file [filename] [content]: save text to a local file
+- read_file [filename]: read a saved file
 - exit: quit Lyra
 - none: just conversation, no tool needed
 
 DECISION RULES (apply in order):
-1. Needs current/live data (weather, news, prices, scores, facts, anything happening now) → search
+1. Needs current/live data (weather, news, prices, scores, facts) → search
 2. Needs math, calculation, conversion, or code → run_code
 3. Asks about phone activity, notifications, WhatsApp → matching phone tool
-4. Asks about music/Spotify → matching Spotify tool — ONLY if the message contains words like play, song, music, artist, playlist, spotify, skip, pause, volume, track
+4. Asks about music/Spotify → matching Spotify tool — ONLY if message contains: play, song, music, artist, playlist, spotify, skip, pause, volume, track
 5. Asks about email, assignments → matching Google tool
-6. Says goodbye/exit/bye/later → exit
-7. Everything else → none
+6. Asks to save or read a file → save_file or read_file
+7. Says goodbye/exit/bye/later → exit
+8. Everything else → none
 
 STRICT RULES:
 - Single words like "mood", "ok", "so", "yeah", "yup", "cool", "nice" → always none
-- "mood" alone is NEVER a Spotify command — it is a system command, always none
-- Only use Spotify tools when the user is clearly asking to control or play music
+- "mood" alone is NEVER a Spotify command — always none
+- Only use Spotify tools when user is clearly asking to control or play music
 - When in doubt → none
 
-Respond with JSON only — no other text:
+Respond with JSON only:
 {{"tool": "tool_name", "params": {{}}, "confidence": "high/medium/low"}}
 
 User message: '{user_input}'"""
@@ -102,33 +104,24 @@ def execute_tool(tool: str, params: dict) -> str | None:
 
     if tool == "search":
         return search(params.get("query", ""))
-
     if tool == "run_code":
         return run_code(params.get("code", ""))
-
     if tool == "get_battery":
         result = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
         return result.stdout.strip()
-
     if tool == "what_was_i_doing":
         return what_was_i_doing(params.get("minutes", 60))
-
     if tool == "last_app_opened":
         return last_app_opened()
-
     if tool == "check_notifications":
         return check_notifications(params.get("app"), params.get("minutes", 60))
-
     if tool == "get_whatsapp_messages":
         return get_whatsapp_messages(params.get("minutes", 120))
-
     if tool == "send_whatsapp":
         return send_whatsapp(params.get("contact", ""), params.get("message", ""))
-
     if tool == "list_contacts":
         result = subprocess.run(["termux-contact-list"], capture_output=True, text=True)
         return result.stdout.strip()
-
     if tool == "play_pause": return play_pause()
     if tool == "next_track": return next_track()
     if tool == "previous_track": return previous_track()
@@ -139,31 +132,33 @@ def execute_tool(tool: str, params: dict) -> str | None:
     if tool == "spotify_volume": return spotify_volume(params.get("level", 50))
     if tool == "play_by_mood": return play_by_mood(params.get("mood", "chill"))
     if tool == "get_user_playlists": return get_user_playlists()
-
     if tool == "get_recent_emails":
         return get_emails(account=params.get("account", "main"))
     if tool == "search_emails":
         return search_emails(query=params.get("query", ""), account=params.get("account", "main"))
     if tool == "get_assignments": return get_assignments()
     if tool == "get_courses": return get_courses()
+    if tool == "save_file":
+        return save_file(params.get("filename", ""), params.get("content", ""))
+    if tool == "read_file":
+        return read_file(params.get("filename", ""))
+    if tool == "list_files":
+        return list_files()
 
     return None
 
 
 def handle_tool(user_input: str) -> tuple[str | None, bool]:
-    # Never route reserved commands to tools — agent.py handles them
-    if user_input.strip().lower() in RESERVED_COMMANDS:
+    lower = user_input.strip().lower()
+
+    if lower in RESERVED_COMMANDS:
+        return None, False
+    if any(lower.startswith(cmd) for cmd in [
+        "that was sarcasm", "benchmark", "remind me", "set briefing",
+        "approve ", "replay task ", "do task ",
+    ]):
         return None, False
 
-    # Never route sarcasm learning command
-    if user_input.strip().lower().startswith("that was sarcasm"):
-        return None, False
-def handle_tool(user_input: str) -> tuple[str | None, bool]:
-    # Never route reserved commands to intent detection
-    lower = user_input.strip().lower()
-    if lower in RESERVED_COMMANDS or lower.startswith("benchmark"):
-        return None, False
- 
     intent = detect_intent(user_input)
     tool = intent.get("tool", "none")
     params = intent.get("params", {})
@@ -171,7 +166,6 @@ def handle_tool(user_input: str) -> tuple[str | None, bool]:
 
     if tool == "exit":
         return None, True
-
     if confidence == "low":
         return None, False
 

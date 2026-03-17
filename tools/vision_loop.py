@@ -1,0 +1,124 @@
+import base64
+import time
+import os
+import requests
+from core.platform import IS_ANDROID
+
+FLUTTER_URL = "http://127.0.0.1:5001/command"
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+def _load_key(name: str) -> str:
+    with open("Keys.txt") as f:
+        for line in f:
+            if line.startswith(name):
+                return line.split("=", 1)[1].strip()
+    raise ValueError(f"{name} not found")
+
+
+def take_screenshot() -> str | None:
+    """Request screenshot from Flutter, return base64 string."""
+    try:
+        resp = requests.post(FLUTTER_URL, json={"action": "screenshot"}, timeout=10)
+        data = resp.json()
+        img_path = data.get("path")
+        if img_path and os.path.exists(img_path):
+            with open(img_path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+    except Exception:
+        pass
+    return None
+
+
+def analyze_screen(screenshot_b64: str, task_description: str) -> dict:
+    """
+    Send screenshot to Groq vision model.
+    Returns {"action": "tap", "x": 100, "y": 200, "reason": "...", "done": false}
+    """
+    import re, json
+    from groq import Groq
+    client = Groq(api_key=_load_key("GROQ"))
+
+    try:
+        response = client.chat.completions.create(
+            model=GROQ_VISION_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}
+                    },
+                    {
+                        "type": "text",
+                        "text": f"""You are controlling an Android phone to complete this task: {task_description}
+
+Look at the screenshot and decide the next action.
+Respond with JSON only:
+{{
+  "action": "tap" | "swipe" | "wait" | "done",
+  "x": <screen x coordinate if tap>,
+  "y": <screen y coordinate if tap>,
+  "x1": <start x if swipe>,
+  "y1": <start y if swipe>,
+  "x2": <end x if swipe>,
+  "y2": <end y if swipe>,
+  "seconds": <seconds to wait if wait>,
+  "reason": "why this action",
+  "done": true if task is complete
+}}"""
+                    }
+                ]
+            }],
+            max_tokens=200
+        )
+        text = response.choices[0].message.content
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception:
+        pass
+    return {"action": "done", "done": True, "reason": "Analysis failed"}
+
+
+def run_vision_task(task_description: str, max_steps: int = 20) -> str:
+    """
+    Main vision loop. Takes screenshot, analyzes, acts, repeats.
+    """
+    from tools.adb_control import tap, swipe, press_back, press_home
+
+    if not IS_ANDROID:
+        return "Vision loop requires Android — Flutter MediaProjection not available on Windows"
+
+    results = []
+    for step in range(max_steps):
+        screenshot = take_screenshot()
+        if not screenshot:
+            return "Could not take screenshot — is Flutter running?"
+
+        decision = analyze_screen(screenshot, task_description)
+        action = decision.get("action", "done")
+        reason = decision.get("reason", "")
+
+        if decision.get("done") or action == "done":
+            results.append(f"Done: {reason}")
+            break
+
+        if action == "tap":
+            x, y = decision.get("x", 0), decision.get("y", 0)
+            tap(x, y)
+            results.append(f"Step {step+1}: tap({x},{y}) — {reason}")
+        elif action == "swipe":
+            swipe(
+                decision.get("x1", 0), decision.get("y1", 0),
+                decision.get("x2", 0), decision.get("y2", 0)
+            )
+            results.append(f"Step {step+1}: swipe — {reason}")
+        elif action == "wait":
+            secs = decision.get("seconds", 1)
+            time.sleep(secs)
+            results.append(f"Step {step+1}: wait {secs}s — {reason}")
+
+        time.sleep(0.5)
+
+    return "\n".join(results) if results else "No steps executed"

@@ -14,7 +14,6 @@ from memory.pattern_engine import print_profile, get_all_categories
 from tools.tool_handler import handle_tool
 
 if IS_WINDOWS:
-    from tools.system_controls import build_app_index
     from voice.wakeword import wait_for_wakeword
 
 if IS_ANDROID:

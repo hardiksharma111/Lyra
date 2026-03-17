@@ -54,6 +54,9 @@ AVAILABLE TOOLS:
 - get_courses: course list
 - play_song [song] / play_artist [artist] / play_by_mood [mood]: Spotify
 - play_pause / next_track / previous_track: Spotify controls
+- save_file [filename] [content]: save text to a file
+- read_file [filename]: read a saved file
+- list_files: list all saved files
 - none: no tool needed
 
 Output a JSON plan:
@@ -160,7 +163,7 @@ class Agent:
                 (m["content"] for m in reversed(self.conversation_history) if m["role"] == "user"),
                 None
             )
-        if last_user:
+            if last_user:
                 learn_sarcasm(last_user.lower().strip())
                 try:
                     from memory.memory_manager import store_pattern
@@ -168,17 +171,41 @@ class Agent:
                 except Exception:
                     pass
                 return f"Got it. I'll read '{last_user}' as sarcasm from now on."
-        return "No recent message to learn from."
-        if user_input.strip().lower().startswith("benchmark"):
-             from memory.benchmark import run_benchmark
-             parts = user_input.strip().lower().split()
-             name = parts[1] if len(parts) > 1 else "help"
-             n = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 10
-        if name == "help":
-                return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | all | history"
-        print(f"Running {name} benchmark with {n} questions...")
-        return run_benchmark(name, n, self)
+            return "No recent message to learn from."
 
+        if user_input.strip().lower().startswith("benchmark"):
+            from memory.benchmark import run_benchmark
+            parts = user_input.strip().lower().split()
+            name = parts[1] if len(parts) > 1 else "help"
+            n = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 10
+            if name == "help":
+                return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | all | history"
+            print(f"Running {name} benchmark with {n} questions...")
+            return run_benchmark(name, n, self)
+
+        # ── Phase 8: File commands ─────────────────────────────────────────
+        if user_input.strip().lower() == "list files":
+            from tools.file_tool import list_files
+            return list_files()
+
+        # ── Phase 8: ADB commands ──────────────────────────────────────────
+        if user_input.strip().lower() == "list tasks":
+            from tools.adb_control import list_tasks
+            return list_tasks()
+
+        if user_input.strip().lower().startswith("replay task "):
+            from tools.adb_control import replay_task
+            name = user_input.strip()[12:].strip()
+            return replay_task(name)
+
+        # ── Phase 8: Vision loop ───────────────────────────────────────────
+        if user_input.strip().lower().startswith("do task "):
+            task = user_input.strip()[8:].strip()
+            print(f"Starting vision task: {task}")
+            from tools.vision_loop import run_vision_task
+            return run_vision_task(task)
+
+        # ── Normal flow ────────────────────────────────────────────────────
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
@@ -289,6 +316,7 @@ class Agent:
             from tools.google_control import (
                 get_emails, search_emails, get_assignments, get_courses
             )
+            from tools.file_tool import save_file, read_file, list_files
             import subprocess
 
             if tool == "search":
@@ -328,6 +356,12 @@ class Agent:
                 return next_track()
             if tool == "previous_track":
                 return previous_track()
+            if tool == "save_file":
+                return save_file(params.get("filename", ""), params.get("content", ""))
+            if tool == "read_file":
+                return read_file(params.get("filename", ""))
+            if tool == "list_files":
+                return list_files()
 
         except Exception as e:
             if self.debug:

@@ -160,7 +160,7 @@ class Agent:
                 (m["content"] for m in reversed(self.conversation_history) if m["role"] == "user"),
                 None
             )
-            if last_user:
+        if last_user:
                 learn_sarcasm(last_user.lower().strip())
                 try:
                     from memory.memory_manager import store_pattern
@@ -168,7 +168,16 @@ class Agent:
                 except Exception:
                     pass
                 return f"Got it. I'll read '{last_user}' as sarcasm from now on."
-            return "No recent message to learn from."
+        return "No recent message to learn from."
+        if user_input.strip().lower().startswith("benchmark"):
+             from memory.benchmark import run_benchmark
+             parts = user_input.strip().lower().split()
+             name = parts[1] if len(parts) > 1 else "help"
+             n = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 10
+        if name == "help":
+                return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | all | history"
+        print(f"Running {name} benchmark with {n} questions...")
+        return run_benchmark(name, n, self)
 
         log_conversation("user", user_input)
         store_conversation("user", user_input)

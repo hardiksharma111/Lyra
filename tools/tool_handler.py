@@ -25,7 +25,7 @@ MODEL = "llama-3.3-70b-versatile"
 # Never route them to tools.
 RESERVED_COMMANDS = {
     "mood", "debug on", "debug off", "suggestions", "errors", "pending",
-    "reminders", "profile", "categories",
+    "reminders", "profile", "categories","benchmark"
 }
 
 
@@ -158,7 +158,12 @@ def handle_tool(user_input: str) -> tuple[str | None, bool]:
     # Never route sarcasm learning command
     if user_input.strip().lower().startswith("that was sarcasm"):
         return None, False
-
+def handle_tool(user_input: str) -> tuple[str | None, bool]:
+    # Never route reserved commands to intent detection
+    lower = user_input.strip().lower()
+    if lower in RESERVED_COMMANDS or lower.startswith("benchmark"):
+        return None, False
+ 
     intent = detect_intent(user_input)
     tool = intent.get("tool", "none")
     params = intent.get("params", {})

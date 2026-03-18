@@ -74,14 +74,18 @@ if IS_ANDROID:
                     })
 
                 elif action == "record_and_transcribe":
-                    result_holder = ["Recording..."]
-                    def do_record():
-                        from tools.voice_input import record_and_transcribe
-                        result_holder[0] = record_and_transcribe()
-                    t = threading.Thread(target=do_record)
-                    t.start()
-                    t.join(timeout=25)
-                    response = _json.dumps({"status": "ok", "transcript": result_holder[0]}).encode()
+                    def do_record_and_push():
+                        try:
+                            from tools.voice_input import record_and_transcribe
+                            transcript = record_and_transcribe()
+                            if transcript and not transcript.startswith("Transcription error") and not transcript.startswith("Recording failed"):
+                                push_to_flutter("transcript_result", transcript)
+                            else:
+                                push_to_flutter("transcript_error", transcript)
+                        except Exception as e:
+                            push_to_flutter("transcript_error", str(e))
+                    threading.Thread(target=do_record_and_push, daemon=True).start()
+                    response = _json.dumps({"status": "ok", "message": "recording started"}).encode()
 
                 elif action == "transcribe":
                     from tools.voice_input import transcribe_base64

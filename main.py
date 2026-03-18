@@ -3,6 +3,7 @@ import sys
 import time
 import threading
 from threading import Lock
+from collections import deque
 
 from core.platform import IS_ANDROID, IS_WINDOWS
 
@@ -24,11 +25,35 @@ if IS_ANDROID:
 
     FLUTTER_URL = "http://127.0.0.1:5001/command"
 
+    _flutter_queue = deque()
+    _flutter_queue_lock = Lock()
+
+    def _enqueue_flutter(action: str, text: str = ""):
+        with _flutter_queue_lock:
+            _flutter_queue.append({"action": action, "text": text})
+
+    def _flush_flutter_queue(max_items: int = 10):
+        # Best-effort: keep trying a few queued messages per tick.
+        sent = 0
+        while sent < max_items:
+            with _flutter_queue_lock:
+                if not _flutter_queue:
+                    return
+                msg = _flutter_queue[0]
+            try:
+                requests.post(FLUTTER_URL, json=msg, timeout=5)
+                with _flutter_queue_lock:
+                    if _flutter_queue and _flutter_queue[0] == msg:
+                        _flutter_queue.popleft()
+                sent += 1
+            except Exception:
+                return
+
     def push_to_flutter(action: str, text: str = ""):
         try:
             requests.post(FLUTTER_URL, json={"action": action, "text": text}, timeout=5)
         except Exception:
-            pass
+            _enqueue_flutter(action, text)
 
     def speak(text: str):
         push_to_flutter("speak", text)
@@ -76,8 +101,11 @@ if IS_ANDROID:
                 elif action == "record_and_transcribe":
                     def do_record_and_push():
                         try:
-                            from tools.voice_input import record_and_transcribe
-                            transcript = record_and_transcribe()
+                            from tools.voice_input import start_vad_recording, record_and_transcribe
+                            try:
+                                transcript = start_vad_recording()
+                            except Exception:
+                                transcript = record_and_transcribe()
                             if transcript and not transcript.startswith("Transcription error") and not transcript.startswith("Recording failed"):
                                 push_to_flutter("transcript_result", transcript)
                             else:
@@ -193,6 +221,7 @@ def main():
         def flutter_poll_loop():
             while not should_exit[0]:
                 try:
+                    _flush_flutter_queue(max_items=20)
                     resp = requests.post(
                         FLUTTER_URL,
                         json={"action": "get_outbox"},

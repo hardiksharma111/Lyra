@@ -2,10 +2,19 @@ import os
 import subprocess
 import base64
 import tempfile
+import wave
 from groq import Groq
 
 AUDIO_PATH = "/data/data/com.termux/files/home/lyra_voice.mp3"
 RECORD_SECONDS = 6
+
+SAMPLE_RATE = 16000
+FRAME_DURATION_MS = 30
+FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)  # 480 samples
+SILENCE_THRESHOLD = 50  # frames = 1.5 seconds
+MAX_FRAMES = 1000  # 30 second cap
+VAD_AGGRESSIVENESS = 2  # 0-3
+VAD_AUDIO_PATH = "/data/data/com.termux/files/home/lyra_voice.wav"
 
 
 def _load_key(name: str) -> str:
@@ -17,6 +26,93 @@ def _load_key(name: str) -> str:
 
 
 client = Groq(api_key=_load_key("GROQ"))
+
+def start_vad_recording() -> str:
+    try:
+        import webrtcvad
+        import pyaudio
+    except Exception as e:
+        raise RuntimeError(f"VAD deps missing: {e}")
+
+    vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+    pa = pyaudio.PyAudio()
+    stream = None
+    frames: list[bytes] = []
+
+    try:
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=SAMPLE_RATE,
+            input=True,
+            frames_per_buffer=FRAME_SIZE,
+        )
+
+        state = "WAITING_FOR_SPEECH"
+        silence_count = 0
+        collected = 0
+
+        for _ in range(MAX_FRAMES):
+            data = stream.read(FRAME_SIZE, exception_on_overflow=False)
+            is_speech = vad.is_speech(data, SAMPLE_RATE)
+
+            if state == "WAITING_FOR_SPEECH":
+                if is_speech:
+                    state = "SPEAKING"
+                    frames.append(data)
+                    collected += 1
+                    silence_count = 0
+                continue
+
+            if state == "SPEAKING":
+                frames.append(data)
+                collected += 1
+                if is_speech:
+                    silence_count = 0
+                else:
+                    silence_count += 1
+                    if silence_count > SILENCE_THRESHOLD:
+                        break
+
+        if collected == 0 or len(frames) < 3:
+            return "Recording failed — no speech detected"
+
+        try:
+            if os.path.exists(VAD_AUDIO_PATH):
+                os.remove(VAD_AUDIO_PATH)
+        except Exception:
+            pass
+
+        with wave.open(VAD_AUDIO_PATH, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(b"".join(frames))
+
+        with open(VAD_AUDIO_PATH, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                file=("audio.wav", f.read()),
+                model="whisper-large-v3",
+                language="en",
+                response_format="text",
+            )
+
+        return transcription.strip() if isinstance(transcription, str) else str(transcription).strip()
+    finally:
+        try:
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+        except Exception:
+            pass
+        try:
+            pa.terminate()
+        except Exception:
+            pass
+        try:
+            os.remove(VAD_AUDIO_PATH)
+        except Exception:
+            pass
 
 
 def record_and_transcribe() -> str:

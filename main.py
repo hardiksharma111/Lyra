@@ -17,51 +17,18 @@ if IS_WINDOWS:
     from voice.wakeword import wait_for_wakeword
 
 if IS_ANDROID:
-    import asyncio
-    import websockets
+    import requests
     import json as _json
     import subprocess
+    from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    # ── WebSocket server (replaces HTTP port 5001) ────────────────────
-    _ws_clients = set()
-    _ws_loop = None
-
-    async def _ws_handler(websocket):
-        _ws_clients.add(websocket)
-        try:
-            async for message in websocket:
-                try:
-                    data = _json.loads(message)
-                    action = data.get("action")
-                    if action == "user_message":
-                        text = data.get("text", "").strip()
-                        if text:
-                            import threading as _t
-                            _t.Thread(target=_handle_flutter_message, args=(text,), daemon=True).start()
-                    elif action == "ping":
-                        await websocket.send(_json.dumps({"action": "pong"}))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        finally:
-            _ws_clients.discard(websocket)
-
-    async def _ws_push(data: dict):
-        if not _ws_clients:
-            return
-        msg = _json.dumps(data)
-        dead = set()
-        for ws in list(_ws_clients):
-            try:
-                await ws.send(msg)
-            except Exception:
-                dead.add(ws)
-        _ws_clients -= dead
+    FLUTTER_URL = "http://127.0.0.1:5001/command"
 
     def push_to_flutter(data: dict):
-        if _ws_loop and _ws_loop.is_running():
-            asyncio.run_coroutine_threadsafe(_ws_push(data), _ws_loop)
+        try:
+            requests.post(FLUTTER_URL, json=data, timeout=5)
+        except Exception:
+            pass
 
     def speak(text: str):
         push_to_flutter({"action": "speak", "text": text})
@@ -71,24 +38,6 @@ if IS_ANDROID:
             stderr=subprocess.DEVNULL
         )
 
-    def _start_ws_server():
-        global _ws_loop
-        _ws_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_ws_loop)
-
-        async def _serve():
-            async with websockets.serve(_ws_handler, "127.0.0.1", 5001):
-                await asyncio.Future()
-
-        _ws_loop.run_until_complete(_serve())
-
-    ws_thread = threading.Thread(target=_start_ws_server, daemon=True)
-    ws_thread.start()
-
-    # ── HTTP event server (port 5002) — Kotlin accessibility + voice ──
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    # Will be set after agent is created in main()
     _handle_flutter_message = lambda text: None
 
     class EventHandler(BaseHTTPRequestHandler):
@@ -153,7 +102,6 @@ if IS_ANDROID:
 
     threading.Thread(target=_start_event_server, daemon=True).start()
 
-    # ── Cloud sync ─────────────────────────────────────────────────────
     def _start_sync():
         try:
             from tools.cloud_sync import start_auto_sync, push_to_drive
@@ -207,6 +155,7 @@ def main():
         safe_print("-" * 50)
 
     if IS_WINDOWS and not os.path.exists("memory/app_index.json"):
+        from tools.system_controls import build_app_index
         build_app_index()
 
     def handle_input(user_input: str) -> bool:
@@ -248,9 +197,30 @@ def main():
 
         return False
 
-    # Wire up Flutter message handler for WebSocket incoming messages
     if IS_ANDROID:
         _handle_flutter_message = handle_input
+
+        def flutter_poll_loop():
+            while not should_exit[0]:
+                try:
+                    resp = requests.post(FLUTTER_URL, json={"action": "get_outbox"}, timeout=5)
+                    data = resp.json()
+                    for msg in data.get("messages", []):
+                        if msg.get("type") == "user_message":
+                            text = msg.get("text", "").strip()
+                            if text:
+                                safe_print(f"[Flutter] {text}")
+                                threading.Thread(target=handle_input, args=(text,), daemon=True).start()
+                    activity = data.get("activity_events", [])
+                    if activity:
+                        from tools.activity_log import log_event
+                        for ev in activity:
+                            log_event(ev)
+                except Exception:
+                    pass
+                time.sleep(1)
+
+        threading.Thread(target=flutter_poll_loop, daemon=True).start()
 
     def voice_loop():
         while not should_exit[0]:

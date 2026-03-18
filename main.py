@@ -102,10 +102,13 @@ if IS_ANDROID:
                     def do_record_and_push():
                         try:
                             from tools.voice_input import start_vad_recording, record_and_transcribe
+                            push_to_flutter("show_message", "PY: starting voice capture...")
                             try:
                                 transcript = start_vad_recording()
                             except Exception:
+                                push_to_flutter("show_message", "PY: VAD unavailable, falling back to termux recorder...")
                                 transcript = record_and_transcribe()
+                            push_to_flutter("show_message", f"PY: transcription done: {transcript[:80]}...")
                             if transcript and not transcript.startswith("Transcription error") and not transcript.startswith("Recording failed"):
                                 push_to_flutter("transcript_result", transcript)
                             else:

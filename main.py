@@ -24,19 +24,17 @@ if IS_ANDROID:
 
     FLUTTER_URL = "http://127.0.0.1:5001/command"
 
-    def push_to_flutter(data: dict):
+    def push_to_flutter(action: str, text: str = ""):
         try:
-            requests.post(FLUTTER_URL, json=data, timeout=5)
+            requests.post(FLUTTER_URL, json={"action": action, "text": text}, timeout=5)
         except Exception:
             pass
 
     def speak(text: str):
-        push_to_flutter({"action": "speak", "text": text})
-        subprocess.Popen(
-            ["termux-tts-speak", text],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        push_to_flutter("speak", text)
+
+    def listen():
+        return input("You: ").strip()
 
     _handle_flutter_message = lambda text: None
 
@@ -57,7 +55,10 @@ if IS_ANDROID:
                 action = body.get("action")
                 response = b'{"status":"ok"}'
 
-                if action == "log_event":
+                if action == "ping":
+                    response = b'{"status":"ok","message":"pong"}'
+
+                elif action == "log_event":
                     from tools.activity_log import log_event
                     log_event(body.get("event", {}))
 
@@ -97,12 +98,9 @@ if IS_ANDROID:
 
         def log_message(self, *args): pass
 
-    def _start_event_server():
-        HTTPServer(("127.0.0.1", 5002), EventHandler).serve_forever()
+    threading.Thread(target=lambda: HTTPServer(("127.0.0.1", 5002), EventHandler).serve_forever(), daemon=True).start()
 
-    threading.Thread(target=_start_event_server, daemon=True).start()
-
-    def _start_sync():
+    def start_sync():
         try:
             from tools.cloud_sync import start_auto_sync, push_to_drive
             push_to_drive()
@@ -110,12 +108,12 @@ if IS_ANDROID:
         except Exception:
             pass
 
-    threading.Thread(target=_start_sync, daemon=True).start()
+    sync_thread = threading.Thread(target=start_sync, daemon=True)
+    sync_thread.start()
 
 else:
     from voice import speak, listen
     from voice.wakeword import wait_for_wakeword
-    def push_to_flutter(data: dict): pass
 
 ERROR_RESPONSES = [
     "I couldn't understand that",
@@ -138,25 +136,14 @@ def main():
     agent = Agent()
     session_id = start_session()
     agent.set_session(session_id)
-    should_exit = [False]
-
     from memory.scheduler import start_scheduler
     start_scheduler(speak, agent)
+    should_exit = [False]
 
-    if IS_ANDROID:
-        safe_print("[Session started]")
-        safe_print("Platform: Android")
-        safe_print("Lyra ready. Type below.")
-        safe_print("-" * 40)
-    else:
-        safe_print("Lyra ready. Type below or say 'blueberry' for voice.")
-        safe_print("Commands: 'profile' | 'categories' | 'goodbye'")
-        safe_print("Platform: Windows")
-        safe_print("-" * 50)
-
-    if IS_WINDOWS and not os.path.exists("memory/app_index.json"):
-        from tools.system_controls import build_app_index
-        build_app_index()
+    platform_label = "Android" if IS_ANDROID else "Windows"
+    safe_print(f"Lyra ready. [{platform_label}]")
+    safe_print("Commands: 'profile' | 'categories' | 'debug on/off' | 'goodbye'")
+    safe_print("-" * 40)
 
     def handle_input(user_input: str) -> bool:
         if not user_input or user_input in ERROR_RESPONSES:
@@ -168,17 +155,16 @@ def main():
 
         if user_input.lower() == "categories":
             cats = get_all_categories()
-            safe_print(f"Current categories: {', '.join(cats)}\n")
+            safe_print(f"Categories: {', '.join(cats)}\n")
             return False
 
         tool_result, should_exit_now = handle_tool(user_input)
 
         if should_exit_now:
             if IS_ANDROID:
-                speak("Later.")
+                push_to_flutter("speak", "Later.")
                 end_session(session_id)
                 should_exit[0] = True
-                import subprocess
                 subprocess.Popen(["python", "main.py"])
             else:
                 safe_print("Lyra: Goodbye.\n")
@@ -190,7 +176,7 @@ def main():
         response = agent.think(user_input, tool_result=tool_result if tool_result else None)
 
         if IS_ANDROID:
-            speak(response)
+            push_to_flutter("speak", response)
         else:
             safe_print(f"Lyra: {response}\n")
             speak(response)
@@ -203,14 +189,19 @@ def main():
         def flutter_poll_loop():
             while not should_exit[0]:
                 try:
-                    resp = requests.post(FLUTTER_URL, json={"action": "get_outbox"}, timeout=5)
+                    resp = requests.post(
+                        FLUTTER_URL,
+                        json={"action": "get_outbox"},
+                        timeout=5
+                    )
                     data = resp.json()
-                    for msg in data.get("messages", []):
+                    messages = data.get("messages", [])
+                    for msg in messages:
                         if msg.get("type") == "user_message":
                             text = msg.get("text", "").strip()
                             if text:
                                 safe_print(f"[Flutter] {text}")
-                                threading.Thread(target=handle_input, args=(text,), daemon=True).start()
+                                handle_input(text)
                     activity = data.get("activity_events", [])
                     if activity:
                         from tools.activity_log import log_event
@@ -220,7 +211,8 @@ def main():
                     pass
                 time.sleep(1)
 
-        threading.Thread(target=flutter_poll_loop, daemon=True).start()
+        poll_thread = threading.Thread(target=flutter_poll_loop, daemon=True)
+        poll_thread.start()
 
     def voice_loop():
         while not should_exit[0]:
@@ -240,8 +232,10 @@ def main():
 
                     if not voice_input or voice_input in ERROR_RESPONSES:
                         failed_attempts += 1
+                        safe_print(f"({voice_input}) - attempt {failed_attempts}/{MAX_FAILED_ATTEMPTS}")
                         if failed_attempts >= MAX_FAILED_ATTEMPTS:
                             speak("Going back to standby.")
+                            safe_print("[Voice standby]")
                             break
                         continue
 
@@ -249,14 +243,19 @@ def main():
                     exiting = handle_input(voice_input)
                     if exiting:
                         return
+
+                    if not IS_ANDROID:
+                        safe_print("Say 'blueberry' to speak again.")
                     break
 
             except Exception as e:
-                safe_print(f"Voice error: {e}")
+                safe_print(f"Voice error: {e} - restarting...")
                 time.sleep(1)
+                continue
 
     if IS_WINDOWS:
-        threading.Thread(target=voice_loop, daemon=True).start()
+        voice_thread = threading.Thread(target=voice_loop, daemon=True)
+        voice_thread.start()
 
     while not should_exit[0]:
         try:

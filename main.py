@@ -33,7 +33,6 @@ if IS_ANDROID:
             _flutter_queue.append({"action": action, "text": text})
 
     def _flush_flutter_queue(max_items: int = 10):
-        # Best-effort: keep trying a few queued messages per tick.
         sent = 0
         while sent < max_items:
             with _flutter_queue_lock:
@@ -134,6 +133,26 @@ if IS_ANDROID:
         def log_message(self, *args): pass
 
     threading.Thread(target=lambda: HTTPServer(("127.0.0.1", 5002), EventHandler).serve_forever(), daemon=True).start()
+
+    # ── Push Groq key to Flutter once on startup so Flutter can call Whisper directly ──
+    def _load_key(name: str) -> str:
+        with open("Keys.txt") as f:
+            for line in f:
+                if line.startswith(name):
+                    return line.split("=", 1)[1].strip()
+        raise ValueError(f"{name} not found in Keys.txt")
+
+    def _push_config():
+        time.sleep(3)  # wait for Flutter HTTP server to be ready
+        try:
+            groq_key = _load_key("GROQ")
+            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
+            print("[config] Groq key pushed to Flutter.")
+        except Exception as e:
+            print(f"[config] Failed to push key: {e}")
+
+    threading.Thread(target=_push_config, daemon=True).start()
+    # ── end config push ──
 
     def start_sync():
         try:

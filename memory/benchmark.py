@@ -2,6 +2,7 @@ import json
 import os
 import re
 import random
+import time 
 from datetime import datetime
 
 RESULTS_FILE = os.path.join("memory", "benchmark_results.json")
@@ -101,6 +102,7 @@ def run_gsm8k(n: int = 10, agent=None) -> str:
         if is_correct:
             correct += 1
         details.append({"q": q[:60], "expected": expected, "got": got, "correct": is_correct})
+        time.sleep(2)
 
     pct = round(correct / len(samples) * 100, 1)
     _log_result("gsm8k", correct, len(samples), details)
@@ -187,6 +189,7 @@ def run_humaneval(n: int = 10, agent=None) -> str:
         if is_correct:
             correct += 1
         details.append({"func": func_name, "correct": is_correct})
+        time.sleep(2)
 
     pct = round(correct / len(samples) * 100, 1)
     _log_result("humaneval", correct, len(samples), details)
@@ -237,6 +240,7 @@ def run_truthfulqa(n: int = 10, agent=None) -> str:
         if is_correct:
             correct += 1
         details.append({"q": q[:50], "correct": is_correct})
+        time.sleep(2)
 
     pct = round(correct / len(samples) * 100, 1)
     _log_result("truthfulqa", correct, len(samples), details)
@@ -298,6 +302,7 @@ def run_mmlu(n: int = 10, agent=None) -> str:
         if is_correct:
             correct += 1
         details.append({"q": q[:50], "expected": expected, "got": got, "correct": is_correct})
+        time.sleep(2)
 
     pct = round(correct / len(samples) * 100, 1)
     _log_result("mmlu", correct, len(samples), details)

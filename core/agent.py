@@ -10,7 +10,7 @@ from memory.context_builder import build_context
 from core.mood_engine import build_mood_context, learn_sarcasm
 
 MODEL_PRIMARY = "llama-3.3-70b-versatile"
-MODEL_FALLBACK = "llama3-8b-8192"
+MODEL_FALLBACK = "llama-3.1-8b-instant"
 MAX_HISTORY = 30
 MAX_AGENT_STEPS = 5
 DEBUG_MODE = False

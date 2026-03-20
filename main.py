@@ -153,6 +153,32 @@ if IS_ANDROID:
 
     threading.Thread(target=_push_config, daemon=True).start()
 
+    # ── Auto-start Baileys WhatsApp server ──
+    def _start_baileys():
+        try:
+            check = requests.post(
+                'http://127.0.0.1:5003',
+                json={'action': 'status'},
+                timeout=2
+            )
+            if check.json().get('connected') is not None:
+                print("[baileys] Already running.")
+                return
+        except Exception:
+            pass
+        try:
+            subprocess.Popen(
+                ['node', '/data/data/com.termux/files/home/baileys-server/server.js'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            print("[baileys] Server started.")
+        except Exception as e:
+            print(f"[baileys] Failed to start: {e}")
+
+    threading.Thread(target=_start_baileys, daemon=True).start()
+    # ── end Baileys auto-start ──
+
     def start_sync():
         try:
             from tools.cloud_sync import start_auto_sync, push_to_drive
@@ -186,9 +212,7 @@ def safe_print(*args, **kwargs):
 def main():
     global _handle_flutter_message
 
-    # ── --once mode: handle one user message from Flutter then exit cleanly ──
-    # Flutter (via wake word) launches: python main.py --once "transcript text"
-    # Python processes it, speaks response, exits. No always-on loop needed.
+    # ── --once mode ──
     once_mode = "--once" in sys.argv
     once_text = None
     if once_mode:
@@ -256,7 +280,6 @@ def main():
         if once_text:
             safe_print(f"[once] {once_text}")
             handle_input(once_text)
-            # Give Flutter time to receive the speak command
             time.sleep(2)
         end_session(session_id)
         safe_print("[once] Done. Exiting.")

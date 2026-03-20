@@ -134,24 +134,13 @@ if IS_ANDROID:
 
     threading.Thread(target=lambda: HTTPServer(("127.0.0.1", 5002), EventHandler).serve_forever(), daemon=True).start()
 
-    # ── Push Groq key to Flutter once on startup ──
+    # ── Load key helper ──
     def _load_key(name: str) -> str:
         with open("Keys.txt") as f:
             for line in f:
                 if line.startswith(name):
                     return line.split("=", 1)[1].strip()
         raise ValueError(f"{name} not found in Keys.txt")
-
-    def _push_config():
-        time.sleep(3)
-        try:
-            groq_key = _load_key("GROQ")
-            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
-            print("[config] Groq key pushed to Flutter.")
-        except Exception as e:
-            print(f"[config] Failed to push key: {e}")
-
-    threading.Thread(target=_push_config, daemon=True).start()
 
     # ── Auto-start Baileys WhatsApp server ──
     def _start_baileys():
@@ -177,7 +166,44 @@ if IS_ANDROID:
             print(f"[baileys] Failed to start: {e}")
 
     threading.Thread(target=_start_baileys, daemon=True).start()
-    # ── end Baileys auto-start ──
+
+    # ── Push Groq key + service status to Flutter on startup ──
+    def _push_config():
+        time.sleep(3)
+
+        # Push Groq key
+        try:
+            groq_key = _load_key("GROQ")
+            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
+            print("[config] Groq key pushed to Flutter.")
+        except Exception as e:
+            print(f"[config] Failed to push Groq key: {e}")
+
+        # Wait for Baileys to fully connect before checking status
+        time.sleep(4)
+
+        # Push service connection status to Flutter
+        try:
+            baileys_connected = False
+            try:
+                r = requests.post('http://127.0.0.1:5003', json={'action': 'status'}, timeout=2)
+                baileys_connected = r.json().get('connected', False)
+            except Exception:
+                pass
+
+            requests.post(FLUTTER_URL, json={
+                "action":    "update_services",
+                "whatsapp":  baileys_connected,
+                "gmail":     os.path.exists("memory/gmail_token.json"),
+                "spotify":   os.path.exists("memory/spotify_token.json"),
+                "drive":     os.path.exists("memory/drive_token.json"),
+                "classroom": os.path.exists("memory/classroom_token.json"),
+            }, timeout=5)
+            print(f"[config] Services pushed. WhatsApp: {baileys_connected}")
+        except Exception as e:
+            print(f"[config] Failed to push services: {e}")
+
+    threading.Thread(target=_push_config, daemon=True).start()
 
     def start_sync():
         try:

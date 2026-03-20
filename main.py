@@ -105,7 +105,7 @@ if IS_ANDROID:
                             try:
                                 transcript = start_vad_recording()
                             except Exception:
-                                push_to_flutter("show_message", "PY: VAD unavailable, falling back to termux recorder...")
+                                push_to_flutter("show_message", "PY: VAD unavailable, falling back...")
                                 transcript = record_and_transcribe()
                             push_to_flutter("show_message", f"PY: transcription done: {transcript[:80]}...")
                             if transcript and not transcript.startswith("Transcription error") and not transcript.startswith("Recording failed"):
@@ -134,7 +134,7 @@ if IS_ANDROID:
 
     threading.Thread(target=lambda: HTTPServer(("127.0.0.1", 5002), EventHandler).serve_forever(), daemon=True).start()
 
-    # ── Push Groq key to Flutter once on startup so Flutter can call Whisper directly ──
+    # ── Push Groq key to Flutter once on startup ──
     def _load_key(name: str) -> str:
         with open("Keys.txt") as f:
             for line in f:
@@ -143,7 +143,7 @@ if IS_ANDROID:
         raise ValueError(f"{name} not found in Keys.txt")
 
     def _push_config():
-        time.sleep(3)  # wait for Flutter HTTP server to be ready
+        time.sleep(3)
         try:
             groq_key = _load_key("GROQ")
             requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
@@ -152,7 +152,6 @@ if IS_ANDROID:
             print(f"[config] Failed to push key: {e}")
 
     threading.Thread(target=_push_config, daemon=True).start()
-    # ── end config push ──
 
     def start_sync():
         try:
@@ -187,17 +186,31 @@ def safe_print(*args, **kwargs):
 def main():
     global _handle_flutter_message
 
+    # ── --once mode: handle one user message from Flutter then exit cleanly ──
+    # Flutter (via wake word) launches: python main.py --once "transcript text"
+    # Python processes it, speaks response, exits. No always-on loop needed.
+    once_mode = "--once" in sys.argv
+    once_text = None
+    if once_mode:
+        idx = sys.argv.index("--once")
+        if idx + 1 < len(sys.argv):
+            once_text = sys.argv[idx + 1].strip()
+
     agent = Agent()
     session_id = start_session()
     agent.set_session(session_id)
-    from memory.scheduler import start_scheduler
-    start_scheduler(speak, agent)
+
+    if not once_mode:
+        from memory.scheduler import start_scheduler
+        start_scheduler(speak, agent)
+
     should_exit = [False]
 
     platform_label = "Android" if IS_ANDROID else "Windows"
-    safe_print(f"Lyra ready. [{platform_label}]")
-    safe_print("Commands: 'profile' | 'categories' | 'debug on/off' | 'goodbye'")
-    safe_print("-" * 40)
+    if not once_mode:
+        safe_print(f"Lyra ready. [{platform_label}]")
+        safe_print("Commands: 'profile' | 'categories' | 'debug on/off' | 'goodbye'")
+        safe_print("-" * 40)
 
     def handle_input(user_input: str) -> bool:
         if not user_input or user_input in ERROR_RESPONSES:
@@ -219,7 +232,8 @@ def main():
                 push_to_flutter("speak", "Later.")
                 end_session(session_id)
                 should_exit[0] = True
-                subprocess.Popen(["python", "main.py"])
+                if not once_mode:
+                    subprocess.Popen(["python", "main.py"])
             else:
                 safe_print("Lyra: Goodbye.\n")
                 speak("Goodbye.")
@@ -236,6 +250,17 @@ def main():
             speak(response)
 
         return False
+
+    # ── Once mode: process single input and exit ──
+    if once_mode and IS_ANDROID:
+        if once_text:
+            safe_print(f"[once] {once_text}")
+            handle_input(once_text)
+            # Give Flutter time to receive the speak command
+            time.sleep(2)
+        end_session(session_id)
+        safe_print("[once] Done. Exiting.")
+        return
 
     if IS_ANDROID:
         _handle_flutter_message = handle_input

@@ -2,6 +2,7 @@ from groq import Groq
 import json
 import re
 import subprocess
+import requests as _requests
 
 from tools.activity_log import (
     what_was_i_doing, check_notifications,
@@ -27,6 +28,8 @@ RESERVED_COMMANDS = {
     "reminders", "profile", "categories", "benchmark", "list tasks", "list files",
 }
 
+BAILEYS_URL = "http://127.0.0.1:5003"
+
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -37,6 +40,56 @@ def _load_key(name: str) -> str:
 
 
 client = Groq(api_key=_load_key("GROQ"))
+
+
+def _send_via_baileys(phone: str, message: str) -> str:
+    """Send a WhatsApp message directly via Baileys on port 5003."""
+    try:
+        r = _requests.post(
+            BAILEYS_URL,
+            json={"action": "send", "jid": phone, "message": message},
+            timeout=10
+        )
+        data = r.json()
+        if data.get("status") == "sent":
+            return f"Sent to {phone}: {message}"
+        return f"Baileys error: {data.get('error', 'unknown')}"
+    except Exception as e:
+        return f"Could not reach Baileys: {e}"
+
+
+def _baileys_flutter_bridge(action: str, payload: dict) -> None:
+    """
+    Bridge function passed to send_whatsapp() in activity_log.py.
+    When activity_log resolves the contact and calls flutter_push_fn('send_whatsapp', {...}),
+    we intercept it and send via Baileys instead of Flutter accessibility.
+    """
+    if action == "send_whatsapp":
+        contact = payload.get("contact", "")
+        message = payload.get("message", "")
+        method  = payload.get("method", "name")
+        # If contact is a phone number, send directly via Baileys
+        if method == "phone" or contact.startswith("+") or contact.lstrip("+").isdigit():
+            _send_via_baileys(contact, message)
+        else:
+            # Fallback: try Baileys with name (it will use JID lookup)
+            _send_via_baileys(contact, message)
+
+
+def send_whatsapp_tool(contact: str, message: str) -> str:
+    """
+    Resolves contact via activity_log (uses phone contacts + confirmed memory),
+    then sends via Baileys directly. No Flutter accessibility needed.
+    """
+    # Check if Baileys is connected first
+    try:
+        r = _requests.post(BAILEYS_URL, json={"action": "status"}, timeout=2)
+        if not r.json().get("connected"):
+            return "WhatsApp not connected right now — Baileys is running but not paired."
+    except Exception:
+        return "Baileys server not reachable on port 5003."
+
+    return send_whatsapp(contact, message, flutter_push_fn=_baileys_flutter_bridge)
 
 
 def detect_intent(user_input: str) -> dict:
@@ -118,7 +171,8 @@ def execute_tool(tool: str, params: dict) -> str | None:
     if tool == "get_whatsapp_messages":
         return get_whatsapp_messages(params.get("minutes", 120))
     if tool == "send_whatsapp":
-        return send_whatsapp(params.get("contact", ""), params.get("message", ""))
+        # ── Now routes through Baileys directly ──
+        return send_whatsapp_tool(params.get("contact", ""), params.get("message", ""))
     if tool == "list_contacts":
         result = subprocess.run(["termux-contact-list"], capture_output=True, text=True)
         return result.stdout.strip()

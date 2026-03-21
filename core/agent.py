@@ -209,12 +209,10 @@ class Agent:
             print(f"Running {name} benchmark with {n} questions...")
             return run_benchmark(name, n, self)
 
-        # ── Phase 8: File commands ─────────────────────────────────────────
         if user_input.strip().lower() == "list files":
             from tools.file_tool import list_files
             return list_files()
 
-        # ── Phase 8: ADB commands ──────────────────────────────────────────
         if user_input.strip().lower() == "list tasks":
             from tools.adb_control import list_tasks
             return list_tasks()
@@ -224,14 +222,12 @@ class Agent:
             name = user_input.strip()[12:].strip()
             return replay_task(name)
 
-        # ── Phase 8: Vision loop ───────────────────────────────────────────
         if user_input.strip().lower().startswith("do task "):
             task = user_input.strip()[8:].strip()
             print(f"Starting vision task: {task}")
             from tools.vision_loop import run_vision_task
             return run_vision_task(task)
 
-        # ── Normal flow ────────────────────────────────────────────────────
         log_conversation("user", user_input)
         store_conversation("user", user_input)
 
@@ -333,7 +329,7 @@ class Agent:
             from tools.code_executor import run_code
             from tools.activity_log import (
                 what_was_i_doing, check_notifications,
-                get_whatsapp_messages, send_whatsapp, last_app_opened
+                get_whatsapp_messages, last_app_opened
             )
             from tools.spotify_control import (
                 play_pause, next_track, previous_track,
@@ -343,6 +339,8 @@ class Agent:
                 get_emails, search_emails, get_assignments, get_courses
             )
             from tools.file_tool import save_file, read_file, list_files
+            # ── Always use tool_handler's send_whatsapp_tool for Baileys routing ──
+            from tools.tool_handler import send_whatsapp_tool
             import subprocess
 
             if tool == "search":
@@ -361,7 +359,8 @@ class Agent:
             if tool == "get_whatsapp_messages":
                 return get_whatsapp_messages(params.get("minutes", 120))
             if tool == "send_whatsapp":
-                return send_whatsapp(params.get("contact", ""), params.get("message", ""))
+                # ── Fixed: routes through Baileys via tool_handler, not activity_log directly ──
+                return send_whatsapp_tool(params.get("contact", ""), params.get("message", ""))
             if tool == "get_recent_emails":
                 return get_emails(account=params.get("account", "main"))
             if tool == "search_emails":
@@ -440,10 +439,7 @@ class Agent:
         messages = [{"role": "system", "content": dynamic_system}]
 
         if context:
-            messages.append({
-                "role": "system",
-                "content": f"Memory:\n{context}"
-            })
+            messages.append({"role": "system", "content": f"Memory:\n{context}"})
 
         messages.append({
             "role": "system",
@@ -461,16 +457,10 @@ class Agent:
         messages = [{"role": "system", "content": dynamic_system}]
 
         if context:
-            messages.append({
-                "role": "system",
-                "content": f"Memory:\n{context}"
-            })
+            messages.append({"role": "system", "content": f"Memory:\n{context}"})
 
         if tool_result:
-            messages.append({
-                "role": "system",
-                "content": f"TOOL RESULT — real live data. Use it directly:\n\n{tool_result}"
-            })
+            messages.append({"role": "system", "content": f"TOOL RESULT — real live data. Use it directly:\n\n{tool_result}"})
 
         messages.extend(self.conversation_history)
         messages.append({"role": "user", "content": user_input})

@@ -169,15 +169,18 @@ if IS_ANDROID:
 
     # ── Push Groq key + service status to Flutter on startup ──
     def _push_config():
-        time.sleep(3)
+      groq_key = _load_key("GROQ")
 
-        # Push Groq key
+    # Retry until Flutter is ready (up to 60s)
+    for attempt in range(12):
+        time.sleep(5)
         try:
-            groq_key = _load_key("GROQ")
-            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
+            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=3)
             print("[config] Groq key pushed to Flutter.")
-        except Exception as e:
-            print(f"[config] Failed to push Groq key: {e}")
+            break
+        except Exception:
+            print(f"[config] Flutter not ready yet, retrying... ({attempt+1}/12)")
+            continue
 
         # Wait for Baileys to fully connect before checking status
         time.sleep(4)

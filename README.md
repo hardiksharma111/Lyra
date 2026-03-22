@@ -232,12 +232,6 @@ debug on                — verbose output
 
 ---
 
-## Novel Architecture — Patent Pending
-
-**Interpreter Sub-Agent** (Phase 12): A child AI that watches Lyra's inference process in real time, traces every response back to source data, and detects hallucinations before they reach you. Nothing like this exists commercially.
-
----
-
 ## License
 
 [CC BY-NC 4.0](LICENSE) — Free to read, learn from, and build on for personal use. Commercial use requires permission.
@@ -246,7 +240,7 @@ debug on                — verbose output
 
 ## Author
 
-**Hardik Sharma** — student, Ashta MP India
+**Hardik Sharma** — student persuing B.tech
 
 Building in public. Follow the journey on [Twitter/X](#).
 

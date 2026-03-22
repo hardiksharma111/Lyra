@@ -19,6 +19,49 @@ def run_code(code: str) -> str:
     Blocks dangerous imports and operations.
     Returns stdout output or error message.
     """
+    for pattern in BLOCKED:
+        if pattern in code:
+            return f"Blocked: '{pattern}' is not allowed in sandboxed execution."
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as f:
+            f.write(code)
+            tmp_path = f.name
+
+        python_cmd = "python" if os.name == "nt" else "python3"
+
+        result = subprocess.run(
+            [python_cmd, tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT
+        )
+
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            return output if output else "Code ran successfully (no output)."
+        else:
+            error = result.stderr.strip()
+            lines = error.split("\n")
+            clean = [l for l in lines if "NamedTemporaryFile" not in l and "tmp" not in l.lower()]
+            return "Error: " + "\n".join(clean).strip()
+
+    except subprocess.TimeoutExpired:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        return f"Timed out after {TIMEOUT} seconds."
+    except Exception as e:
+        return f"Executor error: {e}"
+
     # Safety check
     for pattern in BLOCKED:
         if pattern in code:

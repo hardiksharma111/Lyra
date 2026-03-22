@@ -145,11 +145,7 @@ if IS_ANDROID:
     # ── Auto-start Baileys WhatsApp server ──
     def _start_baileys():
         try:
-            check = requests.post(
-                'http://127.0.0.1:5003',
-                json={'action': 'status'},
-                timeout=2
-            )
+            check = requests.post('http://127.0.0.1:5003', json={'action': 'status'}, timeout=2)
             if check.json().get('connected') is not None:
                 print("[baileys] Already running.")
                 return
@@ -167,25 +163,29 @@ if IS_ANDROID:
 
     threading.Thread(target=_start_baileys, daemon=True).start()
 
-    # ── Push Groq key + service status to Flutter on startup ──
+    # ── Config push — triggered on first successful Flutter contact ──
+    # This runs inside flutter_poll_loop the moment Flutter responds.
+    # No timers, no retrying blind — Flutter is guaranteed open when this runs.
+    _config_pushed = False
+
     def _push_config():
-      groq_key = _load_key("GROQ")
+        global _config_pushed
+        if _config_pushed:
+            return
+        _config_pushed = True
 
-    # Retry until Flutter is ready (up to 60s)
-    for attempt in range(12):
-        time.sleep(5)
+        # Push Groq key
         try:
-            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=3)
+            groq_key = _load_key("GROQ")
+            requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
             print("[config] Groq key pushed to Flutter.")
-            break
-        except Exception:
-            print(f"[config] Flutter not ready yet, retrying... ({attempt+1}/12)")
-            continue
+        except Exception as e:
+            print(f"[config] Failed to push Groq key: {e}")
+            _config_pushed = False  # allow retry next poll
+            return
 
-        # Wait for Baileys to fully connect before checking status
+        # Wait for Baileys to connect then push service status
         time.sleep(4)
-
-        # Push service connection status to Flutter
         try:
             baileys_connected = False
             try:
@@ -193,7 +193,6 @@ if IS_ANDROID:
                 baileys_connected = r.json().get('connected', False)
             except Exception:
                 pass
-
             requests.post(FLUTTER_URL, json={
                 "action":    "update_services",
                 "whatsapp":  baileys_connected,
@@ -205,8 +204,6 @@ if IS_ANDROID:
             print(f"[config] Services pushed. WhatsApp: {baileys_connected}")
         except Exception as e:
             print(f"[config] Failed to push services: {e}")
-
-    threading.Thread(target=_push_config, daemon=True).start()
 
     def start_sync():
         try:
@@ -327,6 +324,11 @@ def main():
                         timeout=5
                     )
                     data = resp.json()
+
+                    # ── Push config on first successful Flutter contact ──
+                    if not _config_pushed:
+                        threading.Thread(target=_push_config, daemon=True).start()
+
                     messages = data.get("messages", [])
                     for msg in messages:
                         if msg.get("type") == "user_message":

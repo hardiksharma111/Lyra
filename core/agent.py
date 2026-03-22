@@ -13,6 +13,7 @@ MODEL_PRIMARY = "llama-3.3-70b-versatile"
 MODEL_FALLBACK = "llama-3.1-8b-instant"
 MAX_HISTORY = 30
 MAX_AGENT_STEPS = 5
+MAX_REPLAN_ATTEMPTS = 2
 DEBUG_MODE = False
 
 def _load_key(name: str) -> str:
@@ -102,7 +103,32 @@ Rules:
 - Each step builds on the previous one's result
 - For research tasks: search first, then synthesize
 - For assignment writing: get_assignments first, then search topic, then write
-- JSON only, no other text."""
+- JSON only, no other text.
+- IMPORTANT: Every step must have valid params matching the tool signature above."""
+
+VALID_TOOLS = {
+    "search": ["query"],
+    "run_code": ["code"],
+    "get_battery": [],
+    "get_whatsapp_messages": ["minutes"],
+    "send_whatsapp": ["contact", "message"],
+    "check_notifications": ["minutes"],
+    "what_was_i_doing": ["minutes"],
+    "get_recent_emails": ["account"],
+    "search_emails": ["query", "account"],
+    "get_assignments": [],
+    "get_courses": [],
+    "play_song": ["song"],
+    "play_artist": ["artist"],
+    "play_by_mood": ["mood"],
+    "play_pause": [],
+    "next_track": [],
+    "previous_track": [],
+    "save_file": ["filename", "content"],
+    "read_file": ["filename"],
+    "list_files": [],
+    "none": [],
+}
 
 
 class Agent:
@@ -261,47 +287,95 @@ class Agent:
         return response
 
     def _run_agentic(self, user_input: str) -> str:
-        plan = self._plan(user_input)
+        """
+        Agentic loop with replan support.
+        If steps produce no results, replans with context of what failed.
+        Never exits on empty steps — retries up to MAX_REPLAN_ATTEMPTS times.
+        """
+        accumulated_results = []
+        failed_tools = []
+        current_input = user_input
 
-        if self.debug:
-            print(f"[Debug Plan]: {json.dumps(plan, indent=2)}")
+        for attempt in range(MAX_REPLAN_ATTEMPTS + 1):
+            # Build replan context if this is a retry
+            replan_context = ""
+            if attempt > 0 and failed_tools:
+                replan_context = f"\n\nNote: Previously tried these tools with no results: {', '.join(failed_tools)}. Try a different approach."
+                current_input = user_input + replan_context
 
-        if not plan.get("needs_tools") or not plan.get("steps"):
-            direct = plan.get("direct_answer", "")
-            if direct:
-                return self._single_response(user_input, context_only=True)
-            return self._single_response(user_input)
-
-        step_results = []
-        steps = plan.get("steps", [])[:MAX_AGENT_STEPS]
-
-        for i, step in enumerate(steps):
-            tool = step.get("tool", "none")
-            params = step.get("params", {})
-            reason = step.get("reason", "")
+            plan = self._plan(current_input)
 
             if self.debug:
-                print(f"[Debug Step {i+1}]: {tool} — {reason}")
+                print(f"[Debug Plan attempt {attempt+1}]: {json.dumps(plan, indent=2)}")
 
-            if tool == "none":
-                continue
+            if not plan.get("needs_tools") or not plan.get("steps"):
+                direct = plan.get("direct_answer", "")
+                if direct or attempt == 0:
+                    return self._single_response(user_input, context_only=True) if direct else self._single_response(user_input)
+                # On retry with no tools needed — use accumulated results if any
+                break
 
-            result = self._execute_step(tool, params)
+            steps = plan.get("steps", [])[:MAX_AGENT_STEPS]
+            step_results_this_attempt = []
 
-            if result:
-                step_results.append({
-                    "step": i + 1,
-                    "tool": tool,
-                    "reason": reason,
-                    "result": result[:2000]
-                })
+            for i, step in enumerate(steps):
+                tool = step.get("tool", "none")
+                params = step.get("params", {})
+                reason = step.get("reason", "")
+
+                if tool == "none":
+                    continue
+
+                # Validate tool exists
+                if tool not in VALID_TOOLS:
+                    if self.debug:
+                        print(f"[Debug] Unknown tool: {tool} — skipping")
+                    failed_tools.append(tool)
+                    continue
+
+                # Inject previous step result into params if tool needs context
+                # e.g. save_file content can come from previous search result
+                if accumulated_results and tool == "save_file" and not params.get("content"):
+                    params["content"] = accumulated_results[-1]["result"][:3000]
 
                 if self.debug:
-                    print(f"[Debug Result {i+1}]: {result[:200]}...")
+                    print(f"[Debug Step {i+1}]: {tool} — {reason}")
 
-        if step_results:
-            return self._synthesize(user_input, step_results)
+                result = self._execute_step(tool, params)
 
+                if result and result.strip():
+                    step_data = {
+                        "step": len(accumulated_results) + len(step_results_this_attempt) + 1,
+                        "tool": tool,
+                        "reason": reason,
+                        "result": result[:2000]
+                    }
+                    step_results_this_attempt.append(step_data)
+
+                    if self.debug:
+                        print(f"[Debug Result {i+1}]: {result[:200]}...")
+                else:
+                    failed_tools.append(tool)
+                    if self.debug:
+                        print(f"[Debug Step {i+1}]: {tool} returned empty")
+
+            accumulated_results.extend(step_results_this_attempt)
+
+            # If we got results this attempt, synthesize
+            if step_results_this_attempt:
+                break
+
+            # No results this attempt — will replan if attempts remain
+            if self.debug and attempt < MAX_REPLAN_ATTEMPTS:
+                print(f"[Debug] No results on attempt {attempt+1}, replanning...")
+
+        # Synthesize whatever we have
+        if accumulated_results:
+            return self._synthesize(user_input, accumulated_results)
+
+        # Nothing worked after all attempts — fall back to direct response
+        if self.debug:
+            print("[Debug] All attempts exhausted, falling back to direct response")
         return self._single_response(user_input)
 
     def _plan(self, user_input: str) -> dict:
@@ -312,12 +386,26 @@ class Agent:
                     {"role": "system", "content": PLANNER_PROMPT},
                     {"role": "user", "content": user_input}
                 ],
-                max_tokens=500,
-                temperature=0.3
+                max_tokens=600,
+                temperature=0.1
             )
             result = response.choices[0].message.content.strip()
             result = re.sub(r'```json|```', '', result).strip()
-            return json.loads(result)
+            parsed = json.loads(result)
+
+            # Validate and clean steps
+            if parsed.get("steps"):
+                valid_steps = []
+                for step in parsed["steps"]:
+                    tool = step.get("tool", "none")
+                    if tool in VALID_TOOLS or tool == "none":
+                        valid_steps.append(step)
+                    else:
+                        if self.debug:
+                            print(f"[Debug Planner] Removed invalid tool: {tool}")
+                parsed["steps"] = valid_steps
+
+            return parsed
         except Exception as e:
             if self.debug:
                 print(f"[Debug Planner error]: {e}")
@@ -339,7 +427,6 @@ class Agent:
                 get_emails, search_emails, get_assignments, get_courses
             )
             from tools.file_tool import save_file, read_file, list_files
-            # ── Always use tool_handler's send_whatsapp_tool for Baileys routing ──
             from tools.tool_handler import send_whatsapp_tool
             import subprocess
 
@@ -351,15 +438,14 @@ class Agent:
                 r = subprocess.run(["termux-battery-status"], capture_output=True, text=True)
                 return r.stdout.strip()
             if tool == "what_was_i_doing":
-                return what_was_i_doing(params.get("minutes", 60))
+                return what_was_i_doing(int(params.get("minutes", 60)))
             if tool == "last_app_opened":
                 return last_app_opened()
             if tool == "check_notifications":
-                return check_notifications(params.get("app"), params.get("minutes", 60))
+                return check_notifications(params.get("app"), int(params.get("minutes", 60)))
             if tool == "get_whatsapp_messages":
-                return get_whatsapp_messages(params.get("minutes", 120))
+                return get_whatsapp_messages(int(params.get("minutes", 120)))
             if tool == "send_whatsapp":
-                # ── Fixed: routes through Baileys via tool_handler, not activity_log directly ──
                 return send_whatsapp_tool(params.get("contact", ""), params.get("message", ""))
             if tool == "get_recent_emails":
                 return get_emails(account=params.get("account", "main"))

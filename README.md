@@ -248,7 +248,7 @@ debug on                — verbose output
 
 **Hardik Sharma** — student, Ashta MP India
 
-Building in public. Follow the journey on [Twitter/X](#).
+Building in public. Follow the journey on [Twitter/X](#https://x.com/HardikShar22753).
 
 ---
 

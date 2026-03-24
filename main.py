@@ -97,29 +97,9 @@ if IS_ANDROID:
                         "time": "",
                     })
 
-                elif action == "record_and_transcribe":
-                    def do_record_and_push():
-                        try:
-                            from tools.voice_input import start_vad_recording, record_and_transcribe
-                            push_to_flutter("show_message", "PY: starting voice capture...")
-                            try:
-                                transcript = start_vad_recording()
-                            except Exception:
-                                push_to_flutter("show_message", "PY: VAD unavailable, falling back...")
-                                transcript = record_and_transcribe()
-                            push_to_flutter("show_message", f"PY: transcription done: {transcript[:80]}...")
-                            if transcript and not transcript.startswith("Transcription error") and not transcript.startswith("Recording failed"):
-                                push_to_flutter("transcript_result", transcript)
-                            else:
-                                push_to_flutter("transcript_error", transcript)
-                        except Exception as e:
-                            push_to_flutter("transcript_error", str(e))
-                    threading.Thread(target=do_record_and_push, daemon=True).start()
-                    response = _json.dumps({"status": "ok", "message": "recording started"}).encode()
-
                 elif action == "transcribe":
                     from tools.voice_input import transcribe_base64
-                    transcript = transcribe_base64(body.get("audio", ""), body.get("ext", "mp4"))
+                    transcript = transcribe_base64(body.get("audio", ""), body.get("ext", "m4a"))
                     response = _json.dumps({"status": "ok", "transcript": transcript}).encode()
 
                 self.send_response(200)
@@ -164,8 +144,6 @@ if IS_ANDROID:
     threading.Thread(target=_start_baileys, daemon=True).start()
 
     # ── Config push — triggered on first successful Flutter contact ──
-    # This runs inside flutter_poll_loop the moment Flutter responds.
-    # No timers, no retrying blind — Flutter is guaranteed open when this runs.
     _config_pushed = False
 
     def _push_config():
@@ -174,17 +152,15 @@ if IS_ANDROID:
             return
         _config_pushed = True
 
-        # Push Groq key
         try:
             groq_key = _load_key("GROQ")
             requests.post(FLUTTER_URL, json={"action": "set_config", "groq_key": groq_key}, timeout=5)
             print("[config] Groq key pushed to Flutter.")
         except Exception as e:
             print(f"[config] Failed to push Groq key: {e}")
-            _config_pushed = False  # allow retry next poll
+            _config_pushed = False
             return
 
-        # Wait for Baileys to connect then push service status
         time.sleep(4)
         try:
             baileys_connected = False
@@ -325,7 +301,6 @@ def main():
                     )
                     data = resp.json()
 
-                    # ── Push config on first successful Flutter contact ──
                     if not _config_pushed:
                         threading.Thread(target=_push_config, daemon=True).start()
 

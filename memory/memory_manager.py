@@ -6,7 +6,7 @@ from datetime import datetime
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-IS_ANDROID = os.path.exists("/data/data/com.termux") or os.name == 'nt'
+IS_ANDROID = os.path.exists("/data/data/com.termux")
 
 MEMORY_DIR = "memory"
 os.makedirs(MEMORY_DIR, exist_ok=True)
@@ -102,7 +102,7 @@ else:
     def recall_relevant(query: str, limit: int = 5) -> list:
         embedding = _encoder.encode(query).tolist()
         results = _conversations.query(query_embeddings=[embedding], n_results=limit)
-        if not results['documents'][0]:
+        if not results or not results.get('documents') or not results['documents'][0]:
             return []
         return [
             {"message": doc, "role": meta["role"], "timestamp": meta["timestamp"]}
@@ -112,7 +112,7 @@ else:
     def recall_patterns(query: str, limit: int = 3) -> list:
         embedding = _encoder.encode(query).tolist()
         results = _patterns.query(query_embeddings=[embedding], n_results=limit)
-        if not results['documents'][0]:
+        if not results or not results.get('documents') or not results['documents'][0]:
             return []
         return results['documents'][0]
 

@@ -67,13 +67,7 @@ def _baileys_flutter_bridge(action: str, payload: dict) -> None:
     if action == "send_whatsapp":
         contact = payload.get("contact", "")
         message = payload.get("message", "")
-        method  = payload.get("method", "name")
-        # If contact is a phone number, send directly via Baileys
-        if method == "phone" or contact.startswith("+") or contact.lstrip("+").isdigit():
-            _send_via_baileys(contact, message)
-        else:
-            # Fallback: try Baileys with name (it will use JID lookup)
-            _send_via_baileys(contact, message)
+        _send_via_baileys(contact, message)
 
 
 def send_whatsapp_tool(contact: str, message: str) -> str:
@@ -144,7 +138,9 @@ User message: '{user_input}'"""
             }],
             max_tokens=150
         )
-        result = response.choices[0].message.content.strip()
+        result = response.choices[0].message.content
+        if not result:
+            return {"tool": "none", "params": {}, "confidence": "low"}
         result = re.sub(r'```json|```', '', result).strip()
         return json.loads(result)
     except Exception:

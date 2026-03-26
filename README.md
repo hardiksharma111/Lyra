@@ -242,7 +242,7 @@ debug on                — verbose output
 
 **Hardik Sharma** — student pursuing B.tech
 
-Building in public. Follow the journey on [Twitter/X](https://x.com/HardikShar22753).
+Building in public.
 
 ---
 

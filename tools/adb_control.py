@@ -13,6 +13,15 @@ MIN_ACTION_DELAY = 0.5
 MAX_ACTION_DELAY = 1.5
 
 
+def _run_android_cmd(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess:
+    """Run Android shell tools with a fallback to /system/bin path for Termux."""
+    cmd = args[0]
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        return subprocess.run([f"/system/bin/{cmd}"] + args[1:], capture_output=True, text=True, timeout=timeout)
+
+
 def _load_tasks() -> dict:
     if os.path.exists(TASKS_FILE):
         with open(TASKS_FILE) as f:
@@ -40,10 +49,7 @@ def tap(x: int, y: int, jitter: bool = True) -> str:
         y += random.randint(-JITTER_PIXELS, JITTER_PIXELS)
 
     try:
-        subprocess.run(
-            ["input", "tap", str(x), str(y)],
-            capture_output=True, text=True, timeout=5
-        )
+        _run_android_cmd(["input", "tap", str(x), str(y)], timeout=5)
         _human_delay()
         return f"Tapped ({x}, {y})"
     except Exception as e:
@@ -55,10 +61,7 @@ def swipe(x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> str:
     if not IS_ANDROID:
         return f"Swipe simulated — Android only"
     try:
-        subprocess.run(
-            ["input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration_ms)],
-            capture_output=True, text=True, timeout=5
-        )
+        _run_android_cmd(["input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration_ms)], timeout=5)
         _human_delay()
         return f"Swiped ({x1},{y1}) → ({x2},{y2})"
     except Exception as e:
@@ -71,10 +74,7 @@ def type_text(text: str) -> str:
         return f"Type simulated: '{text}' — Android only"
     try:
         escaped = text.replace(' ', '%s').replace("'", "\\'")
-        subprocess.run(
-            ["input", "text", escaped],
-            capture_output=True, text=True, timeout=5
-        )
+        _run_android_cmd(["input", "text", escaped], timeout=5)
         _human_delay()
         return f"Typed: {text[:50]}"
     except Exception as e:
@@ -85,7 +85,7 @@ def press_back() -> str:
     """Press Android back button."""
     if not IS_ANDROID:
         return "Back press simulated"
-    subprocess.run(["input", "keyevent", "4"], capture_output=True, text=True)
+    _run_android_cmd(["input", "keyevent", "4"], timeout=5)
     _human_delay()
     return "Back pressed"
 
@@ -94,7 +94,7 @@ def press_home() -> str:
     """Press Android home button."""
     if not IS_ANDROID:
         return "Home press simulated"
-    subprocess.run(["input", "keyevent", "3"], capture_output=True, text=True)
+    _run_android_cmd(["input", "keyevent", "3"], timeout=5)
     _human_delay()
     return "Home pressed"
 
@@ -104,10 +104,7 @@ def open_app(package_name: str) -> str:
     if not IS_ANDROID:
         return f"App open simulated: {package_name}"
     try:
-        subprocess.run(
-            ["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"],
-            capture_output=True, text=True, timeout=10
-        )
+        _run_android_cmd(["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"], timeout=10)
         _human_delay(1.0, 2.0)
         return f"Opened {package_name}"
     except Exception as e:

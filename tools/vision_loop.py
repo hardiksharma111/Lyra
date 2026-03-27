@@ -2,6 +2,7 @@ import base64
 import time
 import random
 import os
+import subprocess
 import requests
 from core.platform import IS_ANDROID
 
@@ -18,7 +19,26 @@ def _load_key(name: str) -> str:
 
 
 def take_screenshot() -> str | None:
-    """Request screenshot from Flutter, return base64 string."""
+    """Capture screenshot and return base64 string.
+
+    Priority on Android:
+    1) Native screencap command (no Flutter capture dependency)
+    2) Flutter capture endpoint fallback
+    """
+    if IS_ANDROID:
+        tmp_path = "/data/data/com.termux/files/home/lyra_vision_screen.png"
+        for bin_name in ("screencap", "/system/bin/screencap"):
+            try:
+                subprocess.run([bin_name, "-p", tmp_path], capture_output=True, text=True, timeout=8)
+                if os.path.exists(tmp_path):
+                    with open(tmp_path, "rb") as f:
+                        data = f.read()
+                    if data:
+                        return base64.b64encode(data).decode()
+            except Exception:
+                continue
+
+    # Fallback to Flutter screenshot endpoint.
     try:
         resp = requests.post(FLUTTER_URL, json={"action": "screenshot"}, timeout=10)
         data = resp.json()

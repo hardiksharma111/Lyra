@@ -9,6 +9,17 @@ from core.platform import IS_ANDROID
 FLUTTER_URL = "http://127.0.0.1:5001/command"
 GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
+APP_PACKAGE_MAP = {
+    "settings": "com.android.settings",
+    "chrome": "com.android.chrome",
+    "youtube": "com.google.android.youtube",
+    "whatsapp": "com.whatsapp",
+    "instagram": "com.instagram.android",
+    "play store": "com.android.vending",
+    "spotify": "com.spotify.music",
+    "brawl stars": "com.supercell.brawlstars",
+}
+
 
 def _load_key(name: str) -> str:
     with open("Keys.txt") as f:
@@ -109,19 +120,42 @@ Respond with JSON only:
     return {"action": "failed", "done": True, "failed": True, "reason": "Analysis failed"}
 
 
+def _resolve_app_package(task_description: str) -> tuple[str | None, str | None]:
+    lower = task_description.lower().strip()
+    # Prefer longer names first (e.g., "play store" before "play").
+    for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
+        if app_name in lower:
+            return APP_PACKAGE_MAP[app_name], app_name
+    return None, None
+
+
 def run_vision_task(task_description: str, max_steps: int = 20) -> str:
     """
     Main vision loop. Takes screenshot, analyzes, acts, repeats.
     """
-    from tools.adb_control import tap, swipe
+    from tools.adb_control import tap, swipe, open_app
 
     if not IS_ANDROID:
         return "Vision loop requires Android — Flutter MediaProjection not available on Windows"
+
+    # Fast-path app launches for common "open/play app" tasks, independent of screenshot availability.
+    lower_task = task_description.lower().strip()
+    if any(k in lower_task for k in ["open ", "launch ", "play "]):
+        pkg, app_name = _resolve_app_package(task_description)
+        if pkg:
+            open_result = open_app(pkg)
+            return f"Done: opened {app_name} ({pkg}) — {open_result}"
 
     results = []
     for step in range(max_steps):
         screenshot = take_screenshot()
         if not screenshot:
+            # If screenshot path is unavailable, still try a package fallback for app-launch tasks.
+            pkg, app_name = _resolve_app_package(task_description)
+            if pkg:
+                open_result = open_app(pkg)
+                results.append(f"Done: fallback opened {app_name} ({pkg}) — {open_result}")
+                break
             return "Could not take screenshot — is Flutter running?"
 
         decision = analyze_screen(screenshot, task_description)

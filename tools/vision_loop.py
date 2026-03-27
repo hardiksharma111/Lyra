@@ -3,6 +3,7 @@ import time
 import random
 import os
 import subprocess
+import re
 import requests
 from core.platform import IS_ANDROID
 
@@ -18,7 +19,58 @@ APP_PACKAGE_MAP = {
     "play store": "com.android.vending",
     "spotify": "com.spotify.music",
     "brawl stars": "com.supercell.brawlstars",
+    "telegram": "org.telegram.messenger",
+    "gmail": "com.google.android.gm",
+    "maps": "com.google.android.apps.maps",
 }
+
+
+def _extract_text_payload(task_description: str) -> str:
+    """Extract quoted text first; otherwise parse after common action phrases."""
+    q = re.search(r'"([^"]+)"|\'([^\']+)\'', task_description)
+    if q:
+        return (q.group(1) or q.group(2) or "").strip()
+
+    lower = task_description.lower()
+    for key in ("search ", "type ", "write "):
+        idx = lower.find(key)
+        if idx != -1:
+            return task_description[idx + len(key):].strip()
+    return ""
+
+
+def _extract_replay_name(task_description: str) -> str:
+    lower = task_description.lower().strip()
+    for pat in (r"replay task\s+(.+)$", r"run task\s+(.+)$"):
+        m = re.search(pat, lower)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _run_template_task(task_description: str) -> str | None:
+    """Run deterministic task templates without requiring screenshot vision."""
+    from tools.adb_control import open_app, type_text, press_enter, replay_task
+
+    lower_task = task_description.lower().strip()
+
+    replay_name = _extract_replay_name(task_description)
+    if replay_name:
+        return replay_task(replay_name)
+
+    pkg, app_name = _resolve_app_package(task_description)
+    if any(k in lower_task for k in ["open ", "launch ", "play "]) and pkg:
+        steps = [f"opened {app_name} ({pkg}) — {open_app(pkg)}"]
+
+        if any(k in lower_task for k in ["search ", "type ", "write "]):
+            payload = _extract_text_payload(task_description)
+            if payload:
+                steps.append(f"typed '{payload[:80]}' — {type_text(payload)}")
+                steps.append(press_enter())
+
+        return "Done: " + " | ".join(steps)
+
+    return None
 
 
 def _load_key(name: str) -> str:
@@ -137,6 +189,10 @@ def run_vision_task(task_description: str, max_steps: int = 20) -> str:
 
     if not IS_ANDROID:
         return "Vision loop requires Android — Flutter MediaProjection not available on Windows"
+
+    template_result = _run_template_task(task_description)
+    if template_result:
+        return template_result
 
     # Fast-path app launches for common "open/play app" tasks, independent of screenshot availability.
     lower_task = task_description.lower().strip()

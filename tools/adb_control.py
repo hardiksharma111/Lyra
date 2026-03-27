@@ -99,6 +99,15 @@ def press_home() -> str:
     return "Home pressed"
 
 
+def press_enter() -> str:
+    """Press Enter key (KEYCODE_ENTER)."""
+    if not IS_ANDROID:
+        return "Enter press simulated"
+    _run_android_cmd(["input", "keyevent", "66"], timeout=5)
+    _human_delay()
+    return "Enter pressed"
+
+
 def open_app(package_name: str) -> str:
     """Open an app by package name."""
     if not IS_ANDROID:
@@ -153,6 +162,8 @@ def replay_task(name: str) -> str:
             result = press_back()
         elif action == "home":
             result = press_home()
+        elif action == "enter":
+            result = press_enter()
         elif action == "wait":
             time.sleep(step.get("seconds", 1))
             result = f"Waited {step.get('seconds', 1)}s"

@@ -104,7 +104,13 @@ def open_app(package_name: str) -> str:
     if not IS_ANDROID:
         return f"App open simulated: {package_name}"
     try:
-        _run_android_cmd(["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"], timeout=10)
+        # `am start` is more reliable from Termux than invoking `monkey` directly.
+        _run_android_cmd([
+            "am", "start", "-W",
+            "-a", "android.intent.action.MAIN",
+            "-c", "android.intent.category.LAUNCHER",
+            package_name,
+        ], timeout=10)
         _human_delay(1.0, 2.0)
         return f"Opened {package_name}"
     except Exception as e:

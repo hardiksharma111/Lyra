@@ -3,10 +3,14 @@ import time
 import random
 import json
 import os
+from datetime import datetime
 from core.platform import IS_ANDROID
 
 # Saved task sequences for replay
 TASKS_FILE = os.path.join("memory", "recorded_tasks.json")
+JITTER_PIXELS = 3
+MIN_ACTION_DELAY = 0.5
+MAX_ACTION_DELAY = 1.5
 
 
 def _load_tasks() -> dict:
@@ -17,8 +21,13 @@ def _load_tasks() -> dict:
 
 
 def _save_tasks(tasks: dict):
+    os.makedirs(os.path.dirname(TASKS_FILE), exist_ok=True)
     with open(TASKS_FILE, "w") as f:
         json.dump(tasks, f, indent=2)
+
+
+def _human_delay(min_seconds: float = MIN_ACTION_DELAY, max_seconds: float = MAX_ACTION_DELAY):
+    time.sleep(random.uniform(min_seconds, max_seconds))
 
 
 def tap(x: int, y: int, jitter: bool = True) -> str:
@@ -27,15 +36,15 @@ def tap(x: int, y: int, jitter: bool = True) -> str:
         return f"ADB tap simulated at ({x}, {y}) — Android only in production"
 
     if jitter:
-        x += random.randint(-5, 5)
-        y += random.randint(-5, 5)
+        x += random.randint(-JITTER_PIXELS, JITTER_PIXELS)
+        y += random.randint(-JITTER_PIXELS, JITTER_PIXELS)
 
     try:
         subprocess.run(
             ["input", "tap", str(x), str(y)],
             capture_output=True, text=True, timeout=5
         )
-        time.sleep(random.uniform(0.3, 0.8))
+        _human_delay()
         return f"Tapped ({x}, {y})"
     except Exception as e:
         return f"Tap failed: {e}"
@@ -50,7 +59,7 @@ def swipe(x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300) -> str:
             ["input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration_ms)],
             capture_output=True, text=True, timeout=5
         )
-        time.sleep(0.3)
+        _human_delay()
         return f"Swiped ({x1},{y1}) → ({x2},{y2})"
     except Exception as e:
         return f"Swipe failed: {e}"
@@ -66,6 +75,7 @@ def type_text(text: str) -> str:
             ["input", "text", escaped],
             capture_output=True, text=True, timeout=5
         )
+        _human_delay()
         return f"Typed: {text[:50]}"
     except Exception as e:
         return f"Type failed: {e}"
@@ -76,7 +86,7 @@ def press_back() -> str:
     if not IS_ANDROID:
         return "Back press simulated"
     subprocess.run(["input", "keyevent", "4"], capture_output=True, text=True)
-    time.sleep(0.3)
+    _human_delay()
     return "Back pressed"
 
 
@@ -85,7 +95,7 @@ def press_home() -> str:
     if not IS_ANDROID:
         return "Home press simulated"
     subprocess.run(["input", "keyevent", "3"], capture_output=True, text=True)
-    time.sleep(0.5)
+    _human_delay()
     return "Home pressed"
 
 
@@ -98,7 +108,7 @@ def open_app(package_name: str) -> str:
             ["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"],
             capture_output=True, text=True, timeout=10
         )
-        time.sleep(2)
+        _human_delay(1.0, 2.0)
         return f"Opened {package_name}"
     except Exception as e:
         return f"Open failed: {e}"
@@ -112,7 +122,7 @@ def record_task(name: str, steps: list) -> str:
     tasks = _load_tasks()
     tasks[name] = {
         "steps": steps,
-        "recorded": str(__import__('datetime').datetime.now())
+        "recorded": datetime.now().isoformat()
     }
     _save_tasks(tasks)
     return f"Task '{name}' saved with {len(steps)} steps"

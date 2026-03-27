@@ -1,5 +1,6 @@
 import base64
 import time
+import random
 import os
 import requests
 from core.platform import IS_ANDROID
@@ -33,9 +34,10 @@ def take_screenshot() -> str | None:
 def analyze_screen(screenshot_b64: str, task_description: str) -> dict:
     """
     Send screenshot to Groq vision model.
-    Returns {"action": "tap", "x": 100, "y": 200, "reason": "...", "done": false}
+    Returns structured action JSON.
     """
-    import re, json
+    import re
+    import json
     from groq import Groq
     client = Groq(api_key=_load_key("GROQ"))
 
@@ -56,7 +58,7 @@ def analyze_screen(screenshot_b64: str, task_description: str) -> dict:
 Look at the screenshot and decide the next action.
 Respond with JSON only:
 {{
-  "action": "tap" | "swipe" | "wait" | "done",
+    "action": "tap" | "swipe" | "wait" | "done" | "failed",
   "x": <screen x coordinate if tap>,
   "y": <screen y coordinate if tap>,
   "x1": <start x if swipe>,
@@ -65,7 +67,8 @@ Respond with JSON only:
   "y2": <end y if swipe>,
   "seconds": <seconds to wait if wait>,
   "reason": "why this action",
-  "done": true if task is complete
+    "done": true if task is complete,
+    "failed": true if task cannot proceed
 }}"""
                     }
                 ]
@@ -76,16 +79,21 @@ Respond with JSON only:
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             return json.loads(match.group())
-    except Exception:
-        pass
-    return {"action": "done", "done": True, "reason": "Analysis failed"}
+    except Exception as e:
+        return {
+            "action": "failed",
+            "done": True,
+            "failed": True,
+            "reason": f"Vision analysis error: {e}"
+        }
+    return {"action": "failed", "done": True, "failed": True, "reason": "Analysis failed"}
 
 
 def run_vision_task(task_description: str, max_steps: int = 20) -> str:
     """
     Main vision loop. Takes screenshot, analyzes, acts, repeats.
     """
-    from tools.adb_control import tap, swipe, press_back, press_home
+    from tools.adb_control import tap, swipe
 
     if not IS_ANDROID:
         return "Vision loop requires Android — Flutter MediaProjection not available on Windows"
@@ -99,6 +107,10 @@ def run_vision_task(task_description: str, max_steps: int = 20) -> str:
         decision = analyze_screen(screenshot, task_description)
         action = decision.get("action", "done")
         reason = decision.get("reason", "")
+
+        if decision.get("failed") or action == "failed":
+            results.append(f"Failed: {reason}")
+            break
 
         if decision.get("done") or action == "done":
             results.append(f"Done: {reason}")
@@ -115,10 +127,13 @@ def run_vision_task(task_description: str, max_steps: int = 20) -> str:
             )
             results.append(f"Step {step+1}: swipe — {reason}")
         elif action == "wait":
-            secs = decision.get("seconds", 1)
+            secs = float(decision.get("seconds", 1))
             time.sleep(secs)
             results.append(f"Step {step+1}: wait {secs}s — {reason}")
+        else:
+            results.append(f"Step {step+1}: unknown action '{action}' — {reason}")
+            break
 
-        time.sleep(0.5)
+        time.sleep(random.uniform(0.5, 1.5))
 
     return "\n".join(results) if results else "No steps executed"

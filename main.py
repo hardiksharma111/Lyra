@@ -290,6 +290,23 @@ def main():
     if IS_ANDROID:
         _handle_flutter_message = handle_input
 
+        # Push config immediately on startup with retries so orb has Groq key
+        def push_config_with_retries():
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    time.sleep(1)  # Give Flutter time to start
+                    if not _config_pushed:
+                        _push_config()
+                        if _config_pushed:
+                            print("[config] Successfully pushed on startup")
+                            break
+                except Exception as e:
+                    print(f"[config] Startup push attempt {attempt+1} failed: {e}")
+                    time.sleep(2)
+        
+        threading.Thread(target=push_config_with_retries, daemon=True).start()
+
         def flutter_poll_loop():
             while not should_exit[0]:
                 try:

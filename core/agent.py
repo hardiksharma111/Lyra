@@ -1,6 +1,9 @@
 from memory.self_improvement import log_error, get_suggestions, get_errors, approve, list_pending
 import re
 import json
+import os
+import time
+from datetime import datetime
 from groq import Groq
 from logs.logger import log_conversation, log_action
 from logs.session import log_topic
@@ -15,6 +18,8 @@ MAX_HISTORY = 30
 MAX_AGENT_STEPS = 5
 MAX_REPLAN_ATTEMPTS = 2
 DEBUG_MODE = False
+FEEDBACK_LOG_FILE = os.path.join("memory", "feedback_log.json")
+REPEAT_WINDOW_SECONDS = 60
 
 def _load_key(name: str) -> str:
     with open("Keys.txt", "r") as f:
@@ -137,12 +142,58 @@ class Agent:
         self.model = MODEL_PRIMARY
         self.session_id = None
         self.debug = DEBUG_MODE
+        self._recent_user_inputs = []
 
     def set_session(self, session_id: int):
         self.session_id = session_id
 
     def set_debug(self, enabled: bool):
         self.debug = enabled
+
+    def _append_feedback_event(self, event: dict):
+        os.makedirs(os.path.dirname(FEEDBACK_LOG_FILE), exist_ok=True)
+        events = []
+
+        if os.path.exists(FEEDBACK_LOG_FILE):
+            try:
+                with open(FEEDBACK_LOG_FILE, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, list):
+                        events = loaded
+            except Exception:
+                events = []
+
+        events.append(event)
+        with open(FEEDBACK_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(events, f, indent=2)
+
+    def _track_implicit_feedback(self, user_input: str):
+        normalized = re.sub(r"\s+", " ", user_input.strip().lower())
+        if len(normalized) < 8:
+            return
+
+        now = time.time()
+        self._recent_user_inputs = [
+            (text, ts)
+            for (text, ts) in self._recent_user_inputs
+            if now - ts <= REPEAT_WINDOW_SECONDS
+        ]
+
+        repeated = any(
+            text == normalized and (now - ts) <= REPEAT_WINDOW_SECONDS
+            for (text, ts) in self._recent_user_inputs
+        )
+
+        if repeated:
+            self._append_feedback_event({
+                "type": "negative_repeat_within_60s",
+                "text": user_input,
+                "normalized": normalized,
+                "timestamp": datetime.now().isoformat(),
+                "window_seconds": REPEAT_WINDOW_SECONDS
+            })
+
+        self._recent_user_inputs.append((normalized, now))
 
     def think(self, user_input: str, tool_result: str = None) -> str:
         if user_input.strip().lower() == "debug on":
@@ -231,7 +282,7 @@ class Agent:
             name = parts[1] if len(parts) > 1 else "help"
             n = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 10
             if name == "help":
-                return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | all | history"
+                return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | phase8 | all | history"
             print(f"Running {name} benchmark with {n} questions...")
             return run_benchmark(name, n, self)
 
@@ -253,6 +304,8 @@ class Agent:
             print(f"Starting vision task: {task}")
             from tools.vision_loop import run_vision_task
             return run_vision_task(task)
+
+        self._track_implicit_feedback(user_input)
 
         log_conversation("user", user_input)
         store_conversation("user", user_input)

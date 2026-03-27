@@ -1,6 +1,5 @@
 from groq import Groq
 import json
-import re
 import subprocess
 import requests as _requests
 
@@ -29,6 +28,310 @@ RESERVED_COMMANDS = {
 }
 
 BAILEYS_URL = "http://127.0.0.1:5003"
+
+EXIT_WORDS = {"exit", "bye", "goodbye", "later", "quit"}
+SIMPLE_NONE_WORDS = {"mood", "ok", "so", "yeah", "yup", "cool", "nice"}
+
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Web search for current/live information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_code",
+            "description": "Run Python code for calculations/data processing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string"}
+                },
+                "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_battery",
+            "description": "Get phone battery status.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "what_was_i_doing",
+            "description": "Get recent app activity timeline.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {"type": "integer", "minimum": 1}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "last_app_opened",
+            "description": "Get last opened app.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_notifications",
+            "description": "Get recent notifications, optionally filtered by app.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string"},
+                    "minutes": {"type": "integer", "minimum": 1}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_whatsapp_messages",
+            "description": "Get recent WhatsApp messages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {"type": "integer", "minimum": 1}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp",
+            "description": "Send WhatsApp message to a contact.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact": {"type": "string"},
+                    "message": {"type": "string"}
+                },
+                "required": ["contact", "message"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_contacts",
+            "description": "List phone contacts.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_pause",
+            "description": "Toggle Spotify play/pause.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "next_track",
+            "description": "Skip to next Spotify track.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "previous_track",
+            "description": "Go to previous Spotify track.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_track",
+            "description": "Get currently playing Spotify track.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_song",
+            "description": "Play song on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "song": {"type": "string"}
+                },
+                "required": ["song"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_artist",
+            "description": "Play artist on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "artist": {"type": "string"}
+                },
+                "required": ["artist"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_playlist",
+            "description": "Play playlist on Spotify.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "playlist": {"type": "string"}
+                },
+                "required": ["playlist"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spotify_volume",
+            "description": "Set Spotify volume 0-100.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "level": {"type": "integer", "minimum": 0, "maximum": 100}
+                },
+                "required": ["level"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_by_mood",
+            "description": "Play Spotify music by mood.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mood": {"type": "string"}
+                },
+                "required": ["mood"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_playlists",
+            "description": "List user Spotify playlists.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recent_emails",
+            "description": "Get recent Gmail messages for account.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "account": {"type": "string", "enum": ["main", "college"]}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_emails",
+            "description": "Search Gmail messages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "account": {"type": "string", "enum": ["main", "college"]}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_assignments",
+            "description": "Get Google Classroom assignments.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_courses",
+            "description": "Get Google Classroom courses.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_file",
+            "description": "Save text content to a local file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string"},
+                    "content": {"type": "string"}
+                },
+                "required": ["filename", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a saved local file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string"}
+                },
+                "required": ["filename"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List all saved local files.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+]
 
 
 def _load_key(name: str) -> str:
@@ -86,63 +389,55 @@ def send_whatsapp_tool(contact: str, message: str) -> str:
     return send_whatsapp(contact, message, flutter_push_fn=_baileys_flutter_bridge)
 
 
+def _parse_tool_args(raw_args: str) -> dict:
+    if not raw_args:
+        return {}
+    try:
+        parsed = json.loads(raw_args)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
 def detect_intent(user_input: str) -> dict:
+    lowered = user_input.strip().lower()
+
+    if lowered in SIMPLE_NONE_WORDS:
+        return {"tool": "none", "params": {}, "confidence": "high"}
+
+    if lowered in EXIT_WORDS:
+        return {"tool": "exit", "params": {}, "confidence": "high"}
+
     try:
         response = client.chat.completions.create(
             model=MODEL,
-            messages=[{
-                "role": "user",
-                "content": f"""You are an intent detector for a personal AI assistant on Android.
-
-TOOLS:
-- search [query]: web search — use for anything needing current/live info
-- run_code [code]: execute Python — use for calculations, data processing
-- get_battery: battery status
-- what_was_i_doing [minutes]: recent phone activity
-- last_app_opened: last app used
-- check_notifications [app] [minutes]: recent notifications
-- get_whatsapp_messages [minutes]: recent WhatsApp messages
-- send_whatsapp [contact] [message]: send WhatsApp message
-- list_contacts: phone contacts
-- play_pause / next_track / previous_track / get_current_track: Spotify playback
-- play_song [song] / play_artist [artist] / play_playlist [name]: Spotify play
-- spotify_volume [0-100] / play_by_mood [mood] / get_user_playlists: Spotify extras
-- get_recent_emails [account]: Gmail (account = main or college)
-- search_emails [query] [account]: search Gmail
-- get_assignments / get_courses: Google Classroom
-- save_file [filename] [content]: save text to a local file
-- read_file [filename]: read a saved file
-- exit: quit Lyra
-- none: just conversation, no tool needed
-
-DECISION RULES (apply in order):
-1. Needs current/live data (weather, news, prices, scores, facts) → search
-2. Needs math, calculation, conversion, or code → run_code
-3. Asks about phone activity, notifications, WhatsApp → matching phone tool
-4. Asks about music/Spotify → matching Spotify tool — ONLY if message contains: play, song, music, artist, playlist, spotify, skip, pause, volume, track
-5. Asks about email, assignments → matching Google tool
-6. Asks to save or read a file → save_file or read_file
-7. Says goodbye/exit/bye/later → exit
-8. Everything else → none
-
-STRICT RULES:
-- Single words like "mood", "ok", "so", "yeah", "yup", "cool", "nice" → always none
-- "mood" alone is NEVER a Spotify command — always none
-- Only use Spotify tools when user is clearly asking to control or play music
-- When in doubt → none
-
-Respond with JSON only:
-{{"tool": "tool_name", "params": {{}}, "confidence": "high/medium/low"}}
-
-User message: '{user_input}'"""
-            }],
-            max_tokens=150
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an intent router. Call exactly one function when a tool is needed. If no tool is needed, do not call a function."
+                },
+                {
+                    "role": "user",
+                    "content": user_input
+                }
+            ],
+            tools=TOOL_SCHEMAS,
+            tool_choice="auto",
+            temperature=0,
+            max_tokens=80,
         )
-        result = response.choices[0].message.content
-        if not result:
+        message = response.choices[0].message
+        tool_calls = message.tool_calls or []
+
+        if not tool_calls:
             return {"tool": "none", "params": {}, "confidence": "low"}
-        result = re.sub(r'```json|```', '', result).strip()
-        return json.loads(result)
+
+        call = tool_calls[0]
+        return {
+            "tool": call.function.name,
+            "params": _parse_tool_args(call.function.arguments),
+            "confidence": "high"
+        }
     except Exception:
         return {"tool": "none", "params": {}, "confidence": "low"}
 

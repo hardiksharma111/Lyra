@@ -407,6 +407,124 @@ def run_mmlu(n: int = 10, agent=None) -> str:
     return result
 
 
+def run_phase8(n: int = 5, agent=None) -> str:
+    """
+    Phase 8 benchmark focused on native tool-use paths:
+    - Groq function-call intent routing latency
+    - ADB task record/replay latency
+    - Vision loop call latency and status
+    """
+    from tools.tool_handler import detect_intent
+    from tools.adb_control import record_task, replay_task
+    from tools.vision_loop import run_vision_task
+
+    samples = max(1, min(n, 10))
+    details = []
+    pass_count = 0
+
+    def _ms(start: float, end: float) -> float:
+        return round((end - start) * 1000, 1)
+
+    for i in range(samples):
+        case = {
+            "iteration": i + 1,
+            "intent_ms": None,
+            "intent_ok": False,
+            "record_ms": None,
+            "replay_ms": None,
+            "adb_ok": False,
+            "vision_ms": None,
+            "vision_ok": False,
+            "vision_status": "",
+        }
+
+        # 1) Intent router (Groq tool-calling path)
+        try:
+            t0 = time.perf_counter()
+            intent = detect_intent("search latest AI news")
+            t1 = time.perf_counter()
+            case["intent_ms"] = _ms(t0, t1)
+            case["intent_ok"] = bool(intent.get("tool") in {"search", "none"})
+        except Exception:
+            case["intent_ok"] = False
+
+        # 2) ADB record/replay path (works on Android, simulated on Windows)
+        task_name = f"phase8_bench_{i}"
+        steps = [
+            {"action": "wait", "seconds": 0},
+            {"action": "tap", "x": 200, "y": 300},
+        ]
+        try:
+            t0 = time.perf_counter()
+            save_msg = record_task(task_name, steps)
+            t1 = time.perf_counter()
+            case["record_ms"] = _ms(t0, t1)
+
+            t2 = time.perf_counter()
+            replay_msg = replay_task(task_name)
+            t3 = time.perf_counter()
+            case["replay_ms"] = _ms(t2, t3)
+
+            case["adb_ok"] = "completed" in replay_msg.lower() and "saved" in save_msg.lower()
+        except Exception:
+            case["adb_ok"] = False
+        finally:
+            # Keep benchmark artifacts out of user task history.
+            try:
+                tasks_path = os.path.join("memory", "recorded_tasks.json")
+                if os.path.exists(tasks_path):
+                    with open(tasks_path, "r", encoding="utf-8") as f:
+                        tasks = json.load(f)
+                    if isinstance(tasks, dict):
+                        keys_to_remove = [k for k in tasks.keys() if k.startswith("phase8_bench_")]
+                        if keys_to_remove:
+                            for key in keys_to_remove:
+                                del tasks[key]
+                            with open(tasks_path, "w", encoding="utf-8") as f:
+                                json.dump(tasks, f, indent=2)
+            except Exception:
+                pass
+
+        # 3) Vision loop path
+        try:
+            t0 = time.perf_counter()
+            vision_msg = run_vision_task("open settings", max_steps=1)
+            t1 = time.perf_counter()
+            case["vision_ms"] = _ms(t0, t1)
+            msg_lower = vision_msg.lower()
+            case["vision_status"] = vision_msg[:120]
+            case["vision_ok"] = (
+                "done:" in msg_lower
+                or "failed:" in msg_lower
+                or "requires android" in msg_lower
+            )
+        except Exception:
+            case["vision_ok"] = False
+
+        if case["intent_ok"] and case["adb_ok"] and case["vision_ok"]:
+            pass_count += 1
+
+        details.append(case)
+
+    pct = round(pass_count / samples * 100, 1)
+    _log_result("phase8", pass_count, samples, details)
+    regression = check_regression("phase8", pct)
+
+    avg_intent = round(sum(d["intent_ms"] or 0 for d in details) / samples, 1)
+    avg_record = round(sum(d["record_ms"] or 0 for d in details) / samples, 1)
+    avg_replay = round(sum(d["replay_ms"] or 0 for d in details) / samples, 1)
+    avg_vision = round(sum(d["vision_ms"] or 0 for d in details) / samples, 1)
+
+    result = (
+        f"Phase8: {pass_count}/{samples} ({pct}%) | "
+        f"intent_avg={avg_intent}ms, record_avg={avg_record}ms, "
+        f"replay_avg={avg_replay}ms, vision_avg={avg_vision}ms"
+    )
+    if regression:
+        result += f" | {regression}"
+    return result
+
+
 def run_benchmark(name: str, n: int = 10, agent=None) -> str:
     name = name.lower().strip()
     if name in ("gsm8k", "math"):
@@ -417,12 +535,15 @@ def run_benchmark(name: str, n: int = 10, agent=None) -> str:
         return run_truthfulqa(n, agent)
     elif name in ("mmlu", "knowledge"):
         return run_mmlu(n, agent)
+    elif name in ("phase8", "native", "appcontrol"):
+        return run_phase8(n, agent)
     elif name == "all":
         results = []
         results.append(run_gsm8k(n, agent))
         results.append(run_humaneval(n, agent))
         results.append(run_truthfulqa(n, agent))
         results.append(run_mmlu(n, agent))
+        results.append(run_phase8(max(3, min(n, 5)), agent))
         return "\n".join(results)
     elif name in ("history", "scores"):
         all_results = get_history()
@@ -433,4 +554,4 @@ def run_benchmark(name: str, n: int = 10, agent=None) -> str:
             lines.append(f"[{r['timestamp']}] {r['benchmark']}: {r['score']}/{r['total']} ({r['pct']}%)")
         return "\n".join(lines)
     else:
-        return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | all | history"
+        return "Usage: benchmark gsm8k | humaneval | truthfulqa | mmlu | phase8 | all | history"

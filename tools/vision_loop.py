@@ -174,6 +174,15 @@ Respond with JSON only:
 
 def _resolve_app_package(task_description: str) -> tuple[str | None, str | None]:
     lower = task_description.lower().strip()
+
+    # Prefer app target explicitly named after open/launch/play verbs.
+    verb_match = re.search(r"\b(?:open|launch|play)\s+(.+?)(?:\s+and\s+|$)", lower)
+    if verb_match:
+        target = verb_match.group(1).strip()
+        for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
+            if app_name in target:
+                return APP_PACKAGE_MAP[app_name], app_name
+
     # Prefer longer names first (e.g., "play store" before "play").
     for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
         if app_name in lower:

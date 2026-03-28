@@ -73,10 +73,23 @@ def type_text(text: str) -> str:
     if not IS_ANDROID:
         return f"Type simulated: '{text}' — Android only"
     try:
-        escaped = text.replace(' ', '%s').replace("'", "\\'")
-        _run_android_cmd(["input", "text", escaped], timeout=5)
+        cleaned = text.strip()
+        if not cleaned:
+            return "Typed: <empty>"
+
+        # Word-by-word typing avoids `%s` parsing edge cases on some OEM builds.
+        parts = [p for p in cleaned.split(" ") if p != ""]
+        if len(parts) <= 1:
+            escaped = cleaned.replace("'", "\\'")
+            _run_android_cmd(["input", "text", escaped], timeout=5)
+        else:
+            for idx, word in enumerate(parts):
+                escaped = word.replace("'", "\\'")
+                _run_android_cmd(["input", "text", escaped], timeout=5)
+                if idx < len(parts) - 1:
+                    _run_android_cmd(["input", "keyevent", "62"], timeout=5)  # SPACE
         _human_delay()
-        return f"Typed: {text[:50]}"
+        return f"Typed: {cleaned[:50]}"
     except Exception as e:
         return f"Type failed: {e}"
 

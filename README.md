@@ -56,7 +56,9 @@ Meanwhile your phone knows everything about you — your schedule, your habits, 
 | Scheduled reminders + morning briefing | ✅ |
 | Self-benchmarking — GSM8K, HumanEval, TruthfulQA, MMLU | ✅ |
 | Always-on voice + wake word "Lyra" | 🔄 Phase 7 |
-| ADB app automation + game automation | 🔄 Phase 8 |
+| ADB app automation + game automation | 🔄 Phase 8 (in progress) |
+| Open/launch/play app tasks via template fallback | ✅ |
+| Full screenshot-driven vision loop for arbitrary UI flows | 🧪 Partial (device/permission dependent) |
 | Sub-agents (Research, Writing, Code) | ⏳ Phase 9 |
 | LoRA fine-tune on your personal data | ⏳ Phase 12 |
 
@@ -120,6 +122,16 @@ Fires at 8pm via TTS. No app required. Runs in background.
 
 ---
 
+## Current Phase 8 Status
+
+- Point 2 (native app control primitives) is working: open app, tap, swipe, type, key events, record/replay tasks.
+- Point 3 has two execution paths:
+    - Template fallback path is working for common commands like "open settings" or "open chrome and search ...".
+    - Full screenshot-driven vision loop is still environment-dependent and may require additional device capture setup.
+- Implicit feedback collection is active: repeated prompts within 60 seconds are logged as negative signals.
+
+---
+
 ## Benchmark Baseline
 
 Scores locked before Phase 12 fine-tuning. Compare after.
@@ -156,17 +168,17 @@ PICOVOICE=your_key
 ```bash
 git clone https://github.com/hardiksharma111/Lyra
 cd Lyra
-pip install groq spotipy google-auth google-auth-oauthlib google-api-python-client requests
+py -m pip install groq spotipy google-auth google-auth-oauthlib google-api-python-client requests
 py main.py
 ```
 
 ### Android (Termux)
 ```bash
 pkg update && pkg install python git -y
-git clone https://TOKEN@github.com/hardiksharma111/Lyra
+git clone https://github.com/hardiksharma111/Lyra
 cd Lyra
 pip install groq==0.9.0 httpx==0.27.0 pydantic==1.10.13
-pip install spotipy google-auth google-auth-oauthlib google-api-python-client
+pip install spotipy google-auth google-auth-oauthlib google-api-python-client requests
 python main.py
 ```
 
@@ -174,11 +186,15 @@ python main.py
 ```
 benchmark gsm8k 20      — run math benchmark
 benchmark all 20        — run all 4 benchmarks
+benchmark phase8 5      — run native tool-use benchmark
 benchmark history       — see past scores
 mood                    — see current mood read
 that was sarcasm        — teach sarcasm pattern
 remind me at 6pm to X  — set reminder
 set briefing at 8am     — daily briefing
+do task open settings   — run Phase 8 app-control task
+replay task <name>      — replay a recorded tap sequence
+list tasks              — list recorded task templates
 errors                  — view error log
 suggestions             — view improvement suggestions
 debug on                — verbose output
@@ -199,11 +215,35 @@ debug on                — verbose output
 | 6 | Mood + Personality | ✅ Complete |
 | 8.5 | Self-Benchmarking | ✅ Complete |
 | 7 | Voice + Ambient | 🔄 In Progress |
-| 8 | Native Tool Use + App Control | ⏳ Pending |
+| 8 | Native Tool Use + App Control | 🔄 In Progress |
 | 9 | Sub-agents + Autonomy | ⏳ Pending |
 | 10 | Security + RBAC | ⏳ Pending |
+| 10.5 | Commercial Readiness | ⏳ Pending |
 | 11 | MCP Layer | ⏳ Pending |
 | 12 | Proprietary LLM | ⏳ Pending |
+| 13 | Behavioral Intelligence | ⏳ Pending |
+
+---
+
+## Verified Progress Snapshot
+
+This is what has been validated so far (not just planned):
+
+| Phase | Delivery Status | Verification Status | Evidence Summary |
+|---|---|---|---|
+| 1 | ✅ Done | ✅ Verified | Runtime loop and session logging validated |
+| 2 | ✅ Done | ✅ Verified | Cross-session memory recall validated |
+| 3 | ✅ Done | ✅ Verified | Multi-tool routing validated across core integrations |
+| 3.5 | ✅ Done | ✅ Verified | Flutter <-> backend command loop validated |
+| 4 | ✅ Done | ✅ Verified | Multi-step planning/replanning behavior validated |
+| 5 | ✅ Done | ✅ Verified | Error/suggestion and reminder flows validated |
+| 6 | ✅ Done | ✅ Verified | Mood and sarcasm command paths validated |
+| 7 | 🔄 In Progress | 🧪 Partial | Voice pipeline foundations validated, long-run ambient reliability pending |
+| 8 | 🔄 In Progress | 🧪 Partial | App-control primitives + template fallback validated, full arbitrary vision loop pending |
+| 8.5 | ✅ Done | ✅ Verified | Benchmarks locked: GSM8K 95%, HumanEval 100%, TruthfulQA 70%, MMLU 100% |
+
+Detailed phase evidence and test-trace progress live in:
+- ROADMAP.md
 
 ---
 

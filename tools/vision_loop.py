@@ -31,6 +31,8 @@ APP_PACKAGE_MAP = {
 APP_ALIASES = {
     "yt": "youtube",
     "ytube": "youtube",
+    "chrom": "chrome",
+    "chorme": "chrome",
     "insta": "instagram",
     "ig": "instagram",
     "gm": "gmail",

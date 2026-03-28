@@ -60,3 +60,4 @@ memory/app_index.json
 memory/.spotify_cache
 memory/google_token_main.json
 memory/google_token_college.json
+.agent.md

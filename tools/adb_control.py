@@ -39,6 +39,16 @@ def _human_delay(min_seconds: float = MIN_ACTION_DELAY, max_seconds: float = MAX
     time.sleep(random.uniform(min_seconds, max_seconds))
 
 
+def _get_focused_window_snapshot() -> str:
+    """Return a lowercased focused-window snapshot for launch verification."""
+    try:
+        proc = _run_android_cmd(["dumpsys", "window"], timeout=6)
+        out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
+        return out
+    except Exception:
+        return ""
+
+
 def tap(x: int, y: int, jitter: bool = True) -> str:
     """Tap at screen coordinate with optional human-like jitter."""
     if not IS_ANDROID:
@@ -150,11 +160,21 @@ def open_app(package_name: str) -> str:
             monkey_ok = monkey_result.returncode == 0 and "error" not in monkey_out
             _human_delay(1.0, 2.0)
             if monkey_ok:
-                return f"Opened {package_name} (fallback monkey)"
+                for _ in range(5):
+                    snap = _get_focused_window_snapshot()
+                    if package_name.lower() in snap:
+                        return f"Opened {package_name} (fallback monkey)"
+                    time.sleep(0.4)
+                return f"Open attempted but {package_name} not foreground"
             return f"Open failed: am and monkey failed for {package_name}"
 
         _human_delay(1.0, 2.0)
-        return f"Opened {package_name}"
+        for _ in range(5):
+            snap = _get_focused_window_snapshot()
+            if package_name.lower() in snap:
+                return f"Opened {package_name}"
+            time.sleep(0.4)
+        return f"Open attempted but {package_name} not foreground"
     except Exception as e:
         return f"Open failed: {e}"
 

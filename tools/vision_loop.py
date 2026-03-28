@@ -123,7 +123,12 @@ def _run_template_task(task_description: str) -> str | None:
 
     pkg, app_name = _resolve_app_package(task_description)
     if any(k in lower_task for k in ["open ", "launch ", "play "]) and pkg:
-        steps = [f"opened {app_name} ({pkg}) — {open_app(pkg)}"]
+        open_result = open_app(pkg)
+        if open_result.lower().startswith("open failed"):
+            _trace("template_open_failed", task=task_description, app=app_name, package=pkg, result=open_result[:200])
+            return f"Failed: could not open {app_name} ({pkg}) — {open_result}"
+
+        steps = [f"opened {app_name} ({pkg}) — {open_result}"]
 
         if any(k in lower_task for k in ["search ", "type ", "write "]):
             payload = _extract_text_payload(task_description)
@@ -280,25 +285,45 @@ Respond with JSON only:
 
 
 def _resolve_app_package(task_description: str) -> tuple[str | None, str | None]:
+    """
+    Resolve app package using DYNAMIC resolution first, then hardcoded map as fallback.
+    Priority ensures Lyra is autonomous and not dependent on hardcoded entries.
+    """
+    from tools.adb_control import resolve_app_package as resolve_dynamic_package
+
     lower = task_description.lower().strip()
 
-    # Prefer app target explicitly named after open/launch/play verbs.
+    # Extract app target explicitly named after open/launch/play verbs.
     verb_match = re.search(r"\b(?:open|launch|play)\s+(.+?)(?:\s+and\s+|$)", lower)
     if verb_match:
         target = verb_match.group(1).strip()
+        target = re.sub(r"^(?:app|application)\s+", "", target).strip()
+        target = re.sub(r"[^a-z0-9_\.\s]", "", target)
         target = _normalize_app_name(target)
+        
+        # PRIORITY 1: Try dynamic package resolution first (autonomy focus)
+        dynamic_pkg = resolve_dynamic_package(target)
+        if dynamic_pkg:
+            return dynamic_pkg, target
+        
+        # PRIORITY 2: Fall back to hardcoded shortcuts for speed
         for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
             if app_name in target:
                 return APP_PACKAGE_MAP[app_name], app_name
 
-    # Prefer longer names first (e.g., "play store" before "play").
+    # Normalize the full task for broader matching
     normalized_full = _normalize_app_name(lower)
+    
+    # PRIORITY 1: Dynamic resolution on full task
+    dynamic_pkg_full = resolve_dynamic_package(normalized_full)
+    if dynamic_pkg_full:
+        return dynamic_pkg_full, normalized_full
+    
+    # PRIORITY 2: Hardcoded map as fallback
     for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
-        if app_name in normalized_full:
+        if app_name in normalized_full or app_name in lower:
             return APP_PACKAGE_MAP[app_name], app_name
-    for app_name in sorted(APP_PACKAGE_MAP.keys(), key=len, reverse=True):
-        if app_name in lower:
-            return APP_PACKAGE_MAP[app_name], app_name
+
     return None, None
 
 
@@ -324,6 +349,9 @@ def run_vision_task(task_description: str, max_steps: int = 20) -> str:
         pkg, app_name = _resolve_app_package(task_description)
         if pkg:
             open_result = open_app(pkg)
+            if open_result.lower().startswith("open failed"):
+                _trace("task_fast_open_failed", task=task_description, app=app_name, package=pkg, result=open_result[:120])
+                return f"Failed: could not open {app_name} ({pkg}) — {open_result}"
             _trace("task_done_fast_open", task=task_description, app=app_name, package=pkg, result=open_result[:120])
             return f"Done: opened {app_name} ({pkg}) — {open_result}"
 
@@ -335,7 +363,10 @@ def run_vision_task(task_description: str, max_steps: int = 20) -> str:
             pkg, app_name = _resolve_app_package(task_description)
             if pkg:
                 open_result = open_app(pkg)
-                results.append(f"Done: fallback opened {app_name} ({pkg}) — {open_result}")
+                if open_result.lower().startswith("open failed"):
+                    results.append(f"Failed: fallback could not open {app_name} ({pkg}) — {open_result}")
+                else:
+                    results.append(f"Done: fallback opened {app_name} ({pkg}) — {open_result}")
                 _trace("task_done_fallback_open", task=task_description, app=app_name, package=pkg, result=open_result[:120])
                 break
             return "Could not take screenshot — is Flutter running?"

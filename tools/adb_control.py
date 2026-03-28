@@ -3,6 +3,7 @@ import time
 import random
 import json
 import os
+import re
 from datetime import datetime
 from core.platform import IS_ANDROID
 
@@ -40,13 +41,114 @@ def _human_delay(min_seconds: float = MIN_ACTION_DELAY, max_seconds: float = MAX
 
 
 def _get_focused_window_snapshot() -> str:
-    """Return a lowercased focused-window snapshot for launch verification."""
+    """Return lowercased focus lines only, not full dumpsys output."""
     try:
         proc = _run_android_cmd(["dumpsys", "window"], timeout=6)
         out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
-        return out
+        focus_lines = []
+        for line in out.splitlines():
+            if "mcurrentfocus" in line or "mfocusedapp" in line:
+                focus_lines.append(line.strip())
+        return "\n".join(focus_lines)
     except Exception:
         return ""
+
+
+def _list_launcher_packages() -> list[str]:
+    """Return launchable package names discovered from Android package manager."""
+    packages: set[str] = set()
+
+    try:
+        proc = _run_android_cmd(
+            [
+                "cmd", "package", "query-activities", "--brief",
+                "-a", "android.intent.action.MAIN",
+                "-c", "android.intent.category.LAUNCHER",
+            ],
+            timeout=10,
+        )
+        out = ((proc.stdout or "") + "\n" + (proc.stderr or ""))
+        for raw in out.splitlines():
+            line = raw.strip()
+            if not line or "/" not in line:
+                continue
+            pkg = line.split("/", 1)[0].strip()
+            if pkg and "." in pkg:
+                packages.add(pkg)
+    except Exception:
+        pass
+
+    # Fallback: all installed packages.
+    if not packages:
+        try:
+            proc = _run_android_cmd(["pm", "list", "packages"], timeout=10)
+            out = ((proc.stdout or "") + "\n" + (proc.stderr or ""))
+            for raw in out.splitlines():
+                line = raw.strip()
+                if line.startswith("package:"):
+                    pkg = line.split(":", 1)[1].strip()
+                    if pkg:
+                        packages.add(pkg)
+        except Exception:
+            pass
+
+    return sorted(packages)
+
+
+def resolve_app_package(app_query: str) -> str | None:
+    """Resolve a human app query to best matching installed package name."""
+    if not IS_ANDROID:
+        return None
+
+    query = (app_query or "").strip().lower()
+    if not query:
+        return None
+
+    # If user already provided package-like input.
+    if "." in query and re.fullmatch(r"[a-z0-9_\.]+", query):
+        return query
+
+    stop = {"app", "open", "launch", "play", "and", "the", "to"}
+    tokens = [
+        t for t in re.split(r"[^a-z0-9]+", query)
+        if t and t not in stop and len(t) > 1
+    ]
+    if not tokens:
+        return None
+
+    best_pkg = None
+    best_score = -10_000
+
+    for pkg in _list_launcher_packages():
+        pkg_l = pkg.lower()
+        segments = [s for s in pkg_l.split(".") if s]
+
+        score = 0
+        matched = 0
+
+        if query in pkg_l:
+            score += 40
+
+        for tok in tokens:
+            if tok in segments:
+                score += 20
+                matched += 1
+            elif tok in pkg_l:
+                score += 8
+                matched += 1
+            else:
+                score -= 6
+
+        if matched == 0:
+            continue
+
+        if score > best_score:
+            best_score = score
+            best_pkg = pkg
+
+    if best_pkg and best_score >= 8:
+        return best_pkg
+    return None
 
 
 def tap(x: int, y: int, jitter: bool = True) -> str:
@@ -151,6 +253,8 @@ def open_app(package_name: str) -> str:
             and "unable to resolve" not in am_out
         )
 
+        package = package_name.lower().strip()
+
         if not am_ok:
             monkey_result = _run_android_cmd(
                 ["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"],
@@ -162,19 +266,19 @@ def open_app(package_name: str) -> str:
             if monkey_ok:
                 for _ in range(5):
                     snap = _get_focused_window_snapshot()
-                    if package_name.lower() in snap:
+                    if package in snap:
                         return f"Opened {package_name} (fallback monkey)"
                     time.sleep(0.4)
-                return f"Open attempted but {package_name} not foreground"
+                return f"Open failed: {package_name} not focused (stayed in current app)"
             return f"Open failed: am and monkey failed for {package_name}"
 
         _human_delay(1.0, 2.0)
         for _ in range(5):
             snap = _get_focused_window_snapshot()
-            if package_name.lower() in snap:
+            if package in snap:
                 return f"Opened {package_name}"
             time.sleep(0.4)
-        return f"Open attempted but {package_name} not foreground"
+        return f"Open failed: {package_name} not focused (stayed in current app)"
     except Exception as e:
         return f"Open failed: {e}"
 

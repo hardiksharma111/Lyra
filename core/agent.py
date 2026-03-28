@@ -70,46 +70,33 @@ WHEN YOU DON'T KNOW:
 - Say "don't have that right now" not "I'm sorry, I don't have access to..."
 - Be direct about limitations. Don't apologize for them."""
 
-PLANNER_PROMPT = """You are Lyra's planning engine. Given a task, break it into steps using available tools.
+PLANNER_PROMPT = """You are Lyra's planning engine. You have access to tools for getting information and completing tasks.
 
 AVAILABLE TOOLS:
-- search [query]: web search for current info, news, facts, weather
-- run_code [code]: execute Python code, calculations
-- get_battery: battery status
-- get_whatsapp_messages [minutes]: read WhatsApp messages
-- send_whatsapp [contact] [message]: send WhatsApp message
-- check_notifications [minutes]: recent notifications
-- what_was_i_doing [minutes]: recent phone activity
-- get_recent_emails [account]: read emails (main/college)
-- search_emails [query] [account]: search emails
-- get_assignments: Google Classroom assignments
-- get_courses: course list
-- play_song [song] / play_artist [artist] / play_by_mood [mood]: Spotify
-- play_pause / next_track / previous_track: Spotify controls
-- save_file [filename] [content]: save text to a file
-- read_file [filename]: read a saved file
-- list_files: list all saved files
-- none: no tool needed
+- search: web search for current info, news, facts, weather
+- run_code: execute Python code for calculations
+- send_whatsapp: send WhatsApp messages
+- get_whatsapp_messages: read recent WhatsApp messages
+- search_emails: search emails
+- play_song / play_artist / play_by_mood: Spotify control
+- do_task: execute a phone task via vision (e.g., "open chrome and search ai")
+- record_task / replay_task: record and replay task sequences
+- save_file / read_file: file operations
+- And more...
 
-Output a JSON plan:
-{
-  "needs_tools": true/false,
-  "steps": [
-    {"tool": "tool_name", "params": {"key": "value"}, "reason": "why this step"},
-    {"tool": "tool_name", "params": {"key": "value"}, "reason": "why this step"}
-  ],
-  "direct_answer": "if needs_tools is false, answer directly here"
-}
+RULES:
+- For any task that needs CURRENT information (news, weather, real-time data) → use search
+- For code or calculations → use run_code
+- For phone/app control → use do_task with specific description
+- For finding things in memory → use search_emails or search
+- If you just need to answer directly → don't use tools
 
-Rules:
-- If task needs live data or chaining → needs_tools: true, list steps in order
-- If task is just conversation or opinion → needs_tools: false, direct_answer
-- Max 5 steps
-- Each step builds on the previous one's result
-- For research tasks: search first, then synthesize
-- For assignment writing: get_assignments first, then search topic, then write
-- JSON only, no other text.
-- IMPORTANT: Every step must have valid params matching the tool signature above."""
+BE SPECIFIC: When calling do_task, give very specific instructions like:
+- "open chrome and search for artificial intelligence"
+- "open youtube and search for ai news"
+- "open settings and enable developer mode"
+
+RESPOND NATURALLY: Don't force tool use. If the answer is in conversation context, just answer."""
 
 VALID_TOOLS = {
     "search": ["query"],
@@ -132,8 +119,115 @@ VALID_TOOLS = {
     "save_file": ["filename", "content"],
     "read_file": ["filename"],
     "list_files": [],
+    "do_task": ["task"],
+    "record_task": ["name", "steps"],
+    "replay_task": ["name"],
     "none": [],
 }
+
+# OpenAI-compatible tool schemas for Groq native tool calling
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search the web for current information, news, facts, or weather",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_code",
+            "description": "Execute Python code for calculations, data processing, or analysis",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code to execute"}
+                },
+                "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp",
+            "description": "Send a WhatsApp message to a contact",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact": {"type": "string", "description": "Contact name or number"},
+                    "message": {"type": "string", "description": "Message text"}
+                },
+                "required": ["contact", "message"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_whatsapp_messages",
+            "description": "Get recent WhatsApp messages",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {"type": "integer", "description": "How many minutes back to retrieve"}
+                },
+                "required": ["minutes"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_emails",
+            "description": "Search emails by query",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Email search query"},
+                    "account": {"type": "string", "description": "Account: 'main' or 'college'", "enum": ["main", "college"]}
+                },
+                "required": ["query", "account"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_song",
+            "description": "Play a song on Spotify",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "song": {"type": "string", "description": "Song name"}
+                },
+                "required": ["song"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "do_task",
+            "description": "Execute a task via vision loop (open apps, control the phone)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "description": "Task description (e.g., 'open chrome and search ai')"}
+                },
+                "required": ["task"]
+            }
+        }
+    }
+]
 
 
 class Agent:
@@ -432,6 +526,10 @@ class Agent:
         return self._single_response(user_input)
 
     def _plan(self, user_input: str) -> dict:
+        """
+        Use Groq native function calling (tool_choice='auto') for guaranteed structured output.
+        Returns dict with tool_calls instead of parsing text JSON.
+        """
         try:
             response = client.chat.completions.create(
                 model=self.model,
@@ -439,26 +537,49 @@ class Agent:
                     {"role": "system", "content": PLANNER_PROMPT},
                     {"role": "user", "content": user_input}
                 ],
+                tools=TOOL_SCHEMAS,
+                tool_choice="auto",
                 max_tokens=600,
                 temperature=0.1
             )
-            result = response.choices[0].message.content.strip()
-            result = re.sub(r'```json|```', '', result).strip()
-            parsed = json.loads(result)
-
-            # Validate and clean steps
-            if parsed.get("steps"):
-                valid_steps = []
-                for step in parsed["steps"]:
-                    tool = step.get("tool", "none")
-                    if tool in VALID_TOOLS or tool == "none":
-                        valid_steps.append(step)
-                    else:
-                        if self.debug:
-                            print(f"[Debug Planner] Removed invalid tool: {tool}")
-                parsed["steps"] = valid_steps
-
-            return parsed
+            
+            # Extract tool calls from response
+            tool_calls = []
+            direct_answer = ""
+            
+            message = response.choices[0].message
+            
+            # If model provided tool calls, use them
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    if tool_call.type == "function":
+                        tool_name = tool_call.function.name
+                        # Parse function arguments (usually JSON string)
+                        try:
+                            args = json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                        
+                        # Validate tool
+                        if tool_name in VALID_TOOLS:
+                            tool_calls.append({
+                                "tool": tool_name,
+                                "params": args,
+                                "reason": f"Tool call from model"
+                            })
+                        elif self.debug:
+                            print(f"[Debug Planner] Unknown tool: {tool_name}")
+            else:
+                # Fallback: model returned text (no tool calls)
+                # This means the task doesn't need tools
+                direct_answer = message.content.strip() if message.content else ""
+            
+            return {
+                "needs_tools": len(tool_calls) > 0,
+                "steps": tool_calls,
+                "direct_answer": direct_answer
+            }
+            
         except Exception as e:
             if self.debug:
                 print(f"[Debug Planner error]: {e}")
@@ -526,6 +647,22 @@ class Agent:
                 return read_file(params.get("filename", ""))
             if tool == "list_files":
                 return list_files()
+            if tool == "do_task":
+                # Route to vision loop for phone automation
+                from tools.vision_loop import run_vision_task
+                task_desc = params.get("task", "")
+                return run_vision_task(task_desc)
+            if tool == "record_task":
+                # Record task sequence for replay
+                from tools.adb_control import record_task
+                name = params.get("name", "")
+                steps = params.get("steps", [])
+                return record_task(name, steps)
+            if tool == "replay_task":
+                # Replay a recorded task
+                from tools.adb_control import replay_task
+                name = params.get("name", "")
+                return replay_task(name)
 
         except Exception as e:
             if self.debug:

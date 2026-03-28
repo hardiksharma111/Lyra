@@ -114,12 +114,32 @@ def open_app(package_name: str) -> str:
         return f"App open simulated: {package_name}"
     try:
         # `am start` is more reliable from Termux than invoking `monkey` directly.
-        _run_android_cmd([
+        am_result = _run_android_cmd([
             "am", "start", "-W",
             "-a", "android.intent.action.MAIN",
             "-c", "android.intent.category.LAUNCHER",
             package_name,
         ], timeout=10)
+
+        am_out = ((am_result.stdout or "") + "\n" + (am_result.stderr or "")).lower()
+        am_ok = (
+            am_result.returncode == 0
+            and "error" not in am_out
+            and "unable to resolve" not in am_out
+        )
+
+        if not am_ok:
+            monkey_result = _run_android_cmd(
+                ["monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"],
+                timeout=10,
+            )
+            monkey_out = ((monkey_result.stdout or "") + "\n" + (monkey_result.stderr or "")).lower()
+            monkey_ok = monkey_result.returncode == 0 and "error" not in monkey_out
+            _human_delay(1.0, 2.0)
+            if monkey_ok:
+                return f"Opened {package_name} (fallback monkey)"
+            return f"Open failed: am and monkey failed for {package_name}"
+
         _human_delay(1.0, 2.0)
         return f"Opened {package_name}"
     except Exception as e:

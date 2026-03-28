@@ -20,7 +20,7 @@
 
 *Remembers everything. Runs privately on your phone. Gets smarter the longer you use it.*
 
-[**Demo**](#demo) · [**Features**](#what-lyra-can-do) · [**Setup**](#setup) · [**Roadmap**](#roadmap) · [**Architecture**](#architecture)
+[**Demo**](#demo) · [**Features**](#what-lyra-can-do) · [**Setup**](#setup) · [**Architecture**](#architecture)
 
 </div>
 
@@ -202,48 +202,11 @@ debug on                — verbose output
 
 ---
 
-## Roadmap
+## Public Status
 
-| Phase | Name | Status |
-|---|---|---|
-| 1 | Foundation | ✅ Complete |
-| 2 | Memory | ✅ Complete |
-| 3 | Tools | ✅ Complete |
-| 3.5 | Android + Flutter | ✅ Complete |
-| 4 | Intelligence | ✅ Complete |
-| 5 | Self-Improvement | ✅ Complete |
-| 6 | Mood + Personality | ✅ Complete |
-| 8.5 | Self-Benchmarking | ✅ Complete |
-| 7 | Voice + Ambient | 🔄 In Progress |
-| 8 | Native Tool Use + App Control | 🔄 In Progress |
-| 9 | Sub-agents + Autonomy | ⏳ Pending |
-| 10 | Security + RBAC | ⏳ Pending |
-| 10.5 | Commercial Readiness | ⏳ Pending |
-| 11 | MCP Layer | ⏳ Pending |
-| 12 | Proprietary LLM | ⏳ Pending |
-| 13 | Behavioral Intelligence | ⏳ Pending |
+Lyra is in active development with core capabilities working (memory, tools, integrations, and benchmarking), while advanced voice ambient reliability and deeper native app-control automation are still being improved.
 
----
-
-## Verified Progress Snapshot
-
-This is what has been validated so far (not just planned):
-
-| Phase | Delivery Status | Verification Status | Evidence Summary |
-|---|---|---|---|
-| 1 | ✅ Done | ✅ Verified | Runtime loop and session logging validated |
-| 2 | ✅ Done | ✅ Verified | Cross-session memory recall validated |
-| 3 | ✅ Done | ✅ Verified | Multi-tool routing validated across core integrations |
-| 3.5 | ✅ Done | ✅ Verified | Flutter <-> backend command loop validated |
-| 4 | ✅ Done | ✅ Verified | Multi-step planning/replanning behavior validated |
-| 5 | ✅ Done | ✅ Verified | Error/suggestion and reminder flows validated |
-| 6 | ✅ Done | ✅ Verified | Mood and sarcasm command paths validated |
-| 7 | 🔄 In Progress | 🧪 Partial | Voice pipeline foundations validated, long-run ambient reliability pending |
-| 8 | 🔄 In Progress | 🧪 Partial | App-control primitives + template fallback validated, full arbitrary vision loop pending |
-| 8.5 | ✅ Done | ✅ Verified | Benchmarks locked: GSM8K 95%, HumanEval 100%, TruthfulQA 70%, MMLU 100% |
-
-Detailed phase evidence and test-trace progress live in:
-- ROADMAP.md
+For security and clarity, detailed roadmap checkpoints and internal verification traces are kept in private project documentation.
 
 ---
 

@@ -11,6 +11,7 @@ from memory.memory_manager import store_conversation, recall_patterns
 from memory.pattern_engine import analyze_and_store
 from memory.context_builder import build_context
 from core.mood_engine import build_mood_context, learn_sarcasm
+from core.subagents import SubAgentOrchestrator
 
 MODEL_PRIMARY = "llama-3.3-70b-versatile"
 MODEL_FALLBACK = "llama-3.1-8b-instant"
@@ -237,12 +238,14 @@ class Agent:
         self.session_id = None
         self.debug = DEBUG_MODE
         self._recent_user_inputs = []
+        self.subagents = SubAgentOrchestrator(self._call_groq_custom, debug=self.debug)
 
     def set_session(self, session_id: int):
         self.session_id = session_id
 
     def set_debug(self, enabled: bool):
         self.debug = enabled
+        self.subagents.set_debug(enabled)
 
     def _append_feedback_event(self, event: dict):
         os.makedirs(os.path.dirname(FEEDBACK_LOG_FILE), exist_ok=True)
@@ -407,7 +410,8 @@ class Agent:
         if tool_result:
             response = self._single_response(user_input, tool_result)
         else:
-            response = self._run_agentic(user_input)
+            phase9_response = self._run_phase9(user_input)
+            response = phase9_response if phase9_response else self._run_agentic(user_input)
 
         response = self._clean_response(response)
 
@@ -432,6 +436,20 @@ class Agent:
             self.conversation_history = self.conversation_history[-(MAX_HISTORY * 2):]
 
         return response
+
+    def _run_phase9(self, user_input: str) -> str | None:
+        """Phase 9: role-based sub-agent orchestration (research/writer/verifier)."""
+        try:
+            memory_context = build_context(user_input)
+            result = self.subagents.run(user_input, memory_context, self.conversation_history)
+            if result and result.strip():
+                if self.debug:
+                    print("[Debug Phase9] Sub-agent orchestration used")
+                return result
+        except Exception as e:
+            if self.debug:
+                print(f"[Debug Phase9 error]: {e}")
+        return None
 
     def _run_agentic(self, user_input: str) -> str:
         """
@@ -744,12 +762,15 @@ class Agent:
         return self._call_groq(messages)
 
     def _call_groq(self, messages: list) -> str:
+        return self._call_groq_custom(messages, max_tokens=1000, temperature=0.85)
+
+    def _call_groq_custom(self, messages: list, max_tokens: int = 1000, temperature: float = 0.85) -> str:
         try:
             response = client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=1000,
-                temperature=0.85
+                max_tokens=max_tokens,
+                temperature=temperature
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -760,8 +781,8 @@ class Agent:
                     response = client.chat.completions.create(
                         model=MODEL_FALLBACK,
                         messages=messages,
-                        max_tokens=1000,
-                        temperature=0.85
+                        max_tokens=max_tokens,
+                        temperature=temperature
                     )
                     return response.choices[0].message.content
                 except Exception as e2:

@@ -11,13 +11,15 @@ document.addEventListener("DOMContentLoaded", () => {
         recognition: null,
         activeSession: null,
         sessions: {}, // { id: { title: "", messages: [...] } }
+        activeView: "chat", // 'chat' | 'settings'
         
         // Settings State
         settings: {
             voiceName: "",
             movementMode: "both", // 'drag' | 'wander' | 'both'
             voiceRate: 1.0,
-            speechEnabled: true
+            speechEnabled: true,
+            voiceVolume: 80 // 0 to 100
         },
         
         // Avatar Wandering Coordinates
@@ -26,7 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
         wanderY: 0,
         targetX: null,
         targetY: null,
-        wanderSpeed: 0.9, // pixels per frame (slow and subtle)
+        wanderSpeed: 0.9,
         voices: []
     };
 
@@ -39,24 +41,41 @@ document.addEventListener("DOMContentLoaded", () => {
         lyraAvatar: document.getElementById("lyra-avatar"),
         modelIndicator: document.getElementById("model-indicator"),
         debugStateText: document.getElementById("debug-state"),
-        btnSuggestions: document.getElementById("btn-suggestions"),
-        btnErrors: document.getElementById("btn-errors"),
         btnDebug: document.getElementById("btn-debug"),
-        debugActionsPane: document.getElementById("debug-actions-pane"),
-        modalOverlay: document.getElementById("modal-container"),
-        modalTitle: document.getElementById("modal-title"),
-        modalBody: document.getElementById("modal-body"),
-        btnCloseModal: document.getElementById("btn-close-modal"),
         btnNewChat: document.getElementById("btn-new-chat"),
+        btnSettings: document.getElementById("btn-settings"),
         chatHistoryList: document.getElementById("chat-history-list"),
         welcomeView: document.getElementById("welcome-view"),
-        btnSettings: document.getElementById("btn-settings")
+        
+        // View Panel Sections
+        chatView: document.getElementById("chat-view"),
+        settingsView: document.getElementById("settings-view"),
+        
+        // Settings Controls
+        btnSpeechYes: document.getElementById("btn-speech-yes"),
+        btnSpeechNo: document.getElementById("btn-speech-no"),
+        volumeSettingsGroup: document.getElementById("volume-settings-group"),
+        settingsVoiceVolume: document.getElementById("settings-voice-volume"),
+        volumeVal: document.getElementById("volume-val"),
+        volumeIcon: document.getElementById("volume-icon"),
+        settingsVoice: document.getElementById("settings-voice"),
+        settingsVoiceRate: document.getElementById("settings-voice-rate"),
+        rateVal: document.getElementById("rate-val"),
+        settingsAvatarMode: document.getElementById("settings-avatar-mode"),
+        
+        // Debug Dashboard Lists
+        suggestionsList: document.getElementById("settings-suggestions-list"),
+        errorsList: document.getElementById("settings-errors-list")
     };
 
     // Initialize Page
     init();
 
     function init() {
+        // Generate Star constellation background
+        generateStardustBackground();
+        window.addEventListener("resize", generateStardustBackground);
+
         // Setup text area auto-grow
         elements.chatInput.addEventListener("input", autoGrowInput);
 
@@ -73,18 +92,13 @@ document.addEventListener("DOMContentLoaded", () => {
         setupSpeechRecognition();
         elements.btnMic.addEventListener("click", toggleVoiceInput);
 
-        // Sidebar actions
-        elements.btnNewChat.addEventListener("click", startNewChat);
-        elements.btnDebug.addEventListener("click", toggleDebugMode);
-        elements.btnSuggestions.addEventListener("click", fetchSuggestions);
-        elements.btnErrors.addEventListener("click", fetchErrors);
-        elements.btnSettings.addEventListener("click", showSettingsPanel);
-
-        // Modal close listeners
-        elements.btnCloseModal.addEventListener("click", hideModal);
-        elements.modalOverlay.addEventListener("click", (e) => {
-            if (e.target === elements.modalOverlay) hideModal();
+        // Sidebar Navigation
+        elements.btnNewChat.addEventListener("click", () => {
+            startNewChat();
+            showChatView();
         });
+        elements.btnSettings.addEventListener("click", showSettingsView);
+        elements.btnDebug.addEventListener("click", toggleDebugMode);
 
         // Quick prompts click listener
         document.querySelectorAll(".prompt-card").forEach(card => {
@@ -99,7 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Load settings from localStorage
         loadSettings();
 
-        // Load voices dynamically
+        // Initialize Speech voice synthesis engine
         setupVoiceSynthesis();
 
         // Set up draggable floating avatar
@@ -116,7 +130,67 @@ document.addEventListener("DOMContentLoaded", () => {
         updateSystemStatus();
         setInterval(updateSystemStatus, 15000);
 
+        // Set up Settings Page DOM bindings
+        setupSettingsPageBindings();
+
+        showChatView();
+    }
+
+    // Dynamic stardust generator
+    function generateStardustBackground() {
+        const container = document.getElementById("twinkling-stars");
+        if (!container) return;
+        
+        container.innerHTML = "";
+        const speeds = ["twinkle-slow", "twinkle-mid", "twinkle-fast"];
+        
+        // Fill viewport based on screen size
+        const starCount = Math.floor((window.innerWidth * window.innerHeight) / 25000) + 15;
+        
+        for (let i = 0; i < starCount; i++) {
+            const star = document.createElement("div");
+            star.className = `star ${speeds[Math.floor(Math.random() * speeds.length)]}`;
+            
+            // Star size between 1px and 2.5px
+            const size = (Math.random() * 1.5 + 1).toFixed(1);
+            star.style.width = `${size}px`;
+            star.style.height = `${size}px`;
+            
+            // Random location coordinates
+            star.style.left = `${Math.random() * 100}%`;
+            star.style.top = `${Math.random() * 100}%`;
+            
+            // Add timing variance to twinkling keyframes
+            star.style.animationDelay = `${Math.random() * 6}s`;
+            star.style.animationDuration = `${Math.random() * 3 + 2.5}s`;
+            
+            container.appendChild(star);
+        }
+    }
+
+    // View Swapping Controller
+    function showChatView() {
+        state.activeView = "chat";
+        elements.chatView.classList.remove("hidden");
+        elements.settingsView.classList.add("hidden");
+        elements.btnSettings.classList.remove("active");
         elements.chatInput.focus();
+    }
+
+    function showSettingsView() {
+        state.activeView = "settings";
+        elements.settingsView.classList.remove("hidden");
+        elements.chatView.classList.add("hidden");
+        elements.btnSettings.classList.add("active");
+        
+        // De-select active chat items in history
+        document.querySelectorAll(".history-item").forEach(item => item.classList.remove("active"));
+        
+        // Refresh speech configuration details in the DOM
+        syncSettingsToDOM();
+        
+        // Fetch debug lists if debug mode is active
+        fetchDebugDashboardData();
     }
 
     // Input height adjustments
@@ -127,6 +201,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Append a message to the chat display
     function appendMessage(sender, text, save = true) {
+        // Ensure chat viewport is active
+        if (state.activeView !== "chat") {
+            showChatView();
+        }
+
         // Hide welcome view if first message
         if (elements.welcomeView && !elements.welcomeView.classList.contains("hidden")) {
             elements.welcomeView.classList.add("hidden");
@@ -155,12 +234,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Typing indicator
     function showTypingIndicator() {
         if (document.getElementById("typing-indicator")) return;
-        
-        // Hide welcome view if showing
-        if (elements.welcomeView && !elements.welcomeView.classList.contains("hidden")) {
-            elements.welcomeView.classList.add("hidden");
-            elements.messagesArea.classList.remove("hidden");
-        }
 
         const typingDiv = document.createElement("div");
         typingDiv.id = "typing-indicator";
@@ -213,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     setOrbMood(data.mood);
                 }
                 
-                // Trigger customized speech synthesis
+                // Trigger speech reply
                 if (data.speak) {
                     speakText(data.response);
                 }
@@ -269,7 +342,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (voice) utterance.voice = voice;
         }
         
-        // Configure speech rate speed
+        // Configure voice volume (0.0 to 1.0) and speak speed rate
+        utterance.volume = state.settings.voiceVolume / 100;
         utterance.rate = state.settings.voiceRate;
         utterance.pitch = 1.0;
 
@@ -289,83 +363,118 @@ document.addEventListener("DOMContentLoaded", () => {
         window.speechSynthesis.speak(utterance);
     }
 
-    // Speech Synthesis initialization
+    // Speech Synthesis voice compilation and categorization
     function setupVoiceSynthesis() {
         if (!('speechSynthesis' in window)) return;
 
-        const loadVoices = () => {
-            // Retrieve English and native voices
-            state.voices = window.speechSynthesis.getVoices()
+        const compileAndPrioritizeVoices = () => {
+            // Retrieve all English-related voice modules
+            const rawVoices = window.speechSynthesis.getVoices()
                 .filter(v => v.lang.startsWith("en") || v.lang.startsWith("en-"));
+
+            // Prioritize higher-quality Online / Natural female voices
+            state.voices = rawVoices.sort((a, b) => {
+                const getScore = (voice) => {
+                    const name = voice.name.toLowerCase();
+                    
+                    const isOnline = name.includes("online") || name.includes("natural");
+                    const isFemale = name.includes("zira") || name.includes("samantha") || 
+                                     name.includes("aria") || name.includes("susan") || 
+                                     name.includes("hazel") || name.includes("google") || 
+                                     name.includes("female");
+                    
+                    if (isOnline && isFemale) return 4;
+                    if (isOnline) return 3;
+                    if (isFemale) return 2;
+                    return 1;
+                };
+                
+                return getScore(b) - getScore(a);
+            });
+
+            // Populate voice picker dropdown
+            populateVoiceDropdown();
         };
 
-        loadVoices();
+        compileAndPrioritizeVoices();
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = loadVoices;
+            window.speechSynthesis.onvoiceschanged = compileAndPrioritizeVoices;
         }
     }
 
-    // Render & handle settings panel
-    function showSettingsPanel() {
-        // Build settings form dynamically
-        let voiceOptions = '<option value="">(Default System Voice)</option>';
+    function populateVoiceDropdown() {
+        if (!elements.settingsVoice) return;
+        
+        elements.settingsVoice.innerHTML = '<option value="">(Default System Voice)</option>';
+        
         state.voices.forEach(v => {
+            const name = v.name.toLowerCase();
+            const isOnline = name.includes("online") || name.includes("natural");
+            const isFemale = name.includes("zira") || name.includes("samantha") || 
+                             name.includes("aria") || name.includes("susan") || 
+                             name.includes("hazel") || name.includes("google") || 
+                             name.includes("female");
+            
+            const genderLabel = isFemale ? "Female" : "Male/General";
+            const qualityLabel = isOnline ? "Natural Online" : "Local";
             const isSelected = v.name === state.settings.voiceName ? "selected" : "";
-            const isFemale = v.name.toLowerCase().includes("zira") || v.name.toLowerCase().includes("hazel") || v.name.toLowerCase().includes("google") || v.name.toLowerCase().includes("samantha") || v.name.toLowerCase().includes("female");
-            const genderLabel = isFemale ? "Female" : "Male/Unknown";
-            voiceOptions += `<option value="${v.name}" ${isSelected}>${v.name} (${genderLabel})</option>`;
+            
+            elements.settingsVoice.innerHTML += `
+                <option value="${v.name}" ${isSelected}>
+                    ${v.name} [${genderLabel} · ${qualityLabel}]
+                </option>
+            `;
+        });
+    }
+
+    // Set up DOM event listeners for settings view controls
+    function setupSettingsPageBindings() {
+        // Voice Reply Toggle Yes/No
+        elements.btnSpeechYes.addEventListener("click", () => {
+            setSpeechEnabled(true);
+        });
+        elements.btnSpeechNo.addEventListener("click", () => {
+            setSpeechEnabled(false);
         });
 
-        const settingsHtml = `
-            <div class="settings-form">
-                <div class="settings-group">
-                    <label><i class="fa-solid fa-user-gear"></i> Choose Voice Tone</label>
-                    <select id="settings-voice" class="settings-control">
-                        ${voiceOptions}
-                    </select>
-                </div>
-                <div class="settings-group">
-                    <label><i class="fa-solid fa-wand-magic-sparkles"></i> Orb Motion Pattern</label>
-                    <select id="settings-avatar-mode" class="settings-control">
-                        <option value="drag" ${state.settings.movementMode === "drag" ? "selected" : ""}>Draggable Only</option>
-                        <option value="wander" ${state.settings.movementMode === "wander" ? "selected" : ""}>Autonomous Wandering</option>
-                        <option value="both" ${state.settings.movementMode === "both" ? "selected" : ""}>Draggable & Wandering</option>
-                    </select>
-                </div>
-                <div class="settings-group">
-                    <label><i class="fa-solid fa-gauge"></i> Speaking Rate: <span id="rate-val">${state.settings.voiceRate.toFixed(1)}x</span></label>
-                    <input type="range" id="settings-voice-rate" class="settings-slider" min="0.5" max="1.6" step="0.1" value="${state.settings.voiceRate}">
-                </div>
-                <div class="settings-row">
-                    <label><i class="fa-solid fa-volume-high"></i> Enable Voice Output</label>
-                    <label class="switch">
-                        <input type="checkbox" id="settings-speech-enabled" ${state.settings.speechEnabled ? "checked" : ""}>
-                        <span class="slider-toggle"></span>
-                    </label>
-                </div>
-            </div>
-        `;
+        // Speech volume slider
+        elements.settingsVoiceVolume.addEventListener("input", (e) => {
+            const val = parseInt(e.target.value);
+            state.settings.voiceVolume = val;
+            elements.volumeVal.textContent = val + "%";
+            
+            // Dynamic speaker icon classes
+            if (val === 0) {
+                elements.volumeIcon.className = "fa-solid fa-volume-xmark";
+            } else if (val < 40) {
+                elements.volumeIcon.className = "fa-solid fa-volume-low";
+            } else {
+                elements.volumeIcon.className = "fa-solid fa-volume-high";
+            }
+            saveSettings();
+        });
 
-        showModal("Lyra Settings", settingsHtml);
-
-        // Attach change listeners to modal elements
-        const voiceSelect = document.getElementById("settings-voice");
-        const modeSelect = document.getElementById("settings-avatar-mode");
-        const rateSlider = document.getElementById("settings-voice-rate");
-        const speechCheckbox = document.getElementById("settings-speech-enabled");
-
-        voiceSelect.addEventListener("change", (e) => {
+        // Voice Tone Dropdown Select
+        elements.settingsVoice.addEventListener("change", (e) => {
             state.settings.voiceName = e.target.value;
             saveSettings();
-            // Test voice immediately
             speakText("Selected voice tone.");
         });
 
-        modeSelect.addEventListener("change", (e) => {
+        // Speed Slider
+        elements.settingsVoiceRate.addEventListener("input", (e) => {
+            const val = parseFloat(e.target.value);
+            state.settings.voiceRate = val;
+            elements.rateVal.textContent = val.toFixed(1) + "x";
+            saveSettings();
+        });
+
+        // Avatar Mode selector
+        elements.settingsAvatarMode.addEventListener("change", (e) => {
             state.settings.movementMode = e.target.value;
             saveSettings();
             if (state.settings.movementMode === "drag") {
-                // Return to bottom-right corner smoothly
+                // Returns avatar smoothly to bottom right corner coordinates
                 elements.lyraAvatar.style.transition = "all 0.8s cubic-bezier(0.25, 1, 0.5, 1)";
                 elements.lyraAvatar.style.left = "";
                 elements.lyraAvatar.style.top = "";
@@ -376,18 +485,48 @@ document.addEventListener("DOMContentLoaded", () => {
                 }, 800);
             }
         });
+    }
 
-        rateSlider.addEventListener("input", (e) => {
-            const val = parseFloat(e.target.value);
-            state.settings.voiceRate = val;
-            document.getElementById("rate-val").textContent = val.toFixed(1) + "x";
-            saveSettings();
-        });
+    function setSpeechEnabled(enabled) {
+        state.settings.speechEnabled = enabled;
+        saveSettings();
+        
+        if (enabled) {
+            elements.btnSpeechYes.classList.add("active");
+            elements.btnSpeechNo.classList.remove("active");
+            elements.volumeSettingsGroup.classList.remove("hidden");
+            speakText("Voice response active.");
+        } else {
+            elements.btnSpeechNo.classList.add("active");
+            elements.btnSpeechYes.classList.remove("active");
+            elements.volumeSettingsGroup.classList.add("hidden");
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        }
+    }
 
-        speechCheckbox.addEventListener("change", (e) => {
-            state.settings.speechEnabled = e.target.checked;
-            saveSettings();
-        });
+    // Synchronize loaded state parameters to DOM elements on settings view enter
+    function syncSettingsToDOM() {
+        if (state.settings.speechEnabled) {
+            elements.btnSpeechYes.classList.add("active");
+            elements.btnSpeechNo.classList.remove("active");
+            elements.volumeSettingsGroup.classList.remove("hidden");
+        } else {
+            elements.btnSpeechNo.classList.add("active");
+            elements.btnSpeechYes.classList.remove("active");
+            elements.volumeSettingsGroup.classList.add("hidden");
+        }
+
+        elements.settingsVoiceVolume.value = state.settings.voiceVolume;
+        elements.volumeVal.textContent = state.settings.voiceVolume + "%";
+        
+        elements.settingsVoiceRate.value = state.settings.voiceRate;
+        elements.rateVal.textContent = state.settings.voiceRate.toFixed(1) + "x";
+        
+        elements.settingsAvatarMode.value = state.settings.movementMode;
+        
+        populateVoiceDropdown();
     }
 
     // Local Storage helpers
@@ -417,12 +556,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.debug) {
                     elements.btnDebug.classList.add("active");
                     elements.debugStateText.textContent = "ON";
-                    elements.debugActionsPane.classList.remove("hidden");
                 } else {
                     elements.btnDebug.classList.remove("active");
                     elements.debugStateText.textContent = "OFF";
-                    elements.debugActionsPane.classList.add("hidden");
                 }
+                
+                // Toggle dashboard data when active view is settings and state transitions
+                if (state.debug !== data.debug) {
+                    state.debug = data.debug;
+                    if (state.activeView === "settings") {
+                        fetchDebugDashboardData();
+                    }
+                }
+                
                 state.debug = data.debug;
 
                 if (data.mood) {
@@ -434,28 +580,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Modal view helpers
-    function showModal(title, htmlContent) {
-        elements.modalTitle.textContent = title;
-        elements.modalBody.innerHTML = htmlContent;
-        elements.modalOverlay.classList.remove("hidden");
-        elements.modalOverlay.offsetHeight; // force reflow
-        elements.modalOverlay.classList.add("visible");
-    }
-
-    function hideModal() {
-        elements.modalOverlay.classList.remove("visible");
-        setTimeout(() => {
-            elements.modalOverlay.classList.add("hidden");
-        }, 300);
-        // Clear any synthetic speaking tests on close
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
+    // Fetch errors & suggestions dynamically to render on the settings page
+    async function fetchDebugDashboardData() {
+        if (!state.debug) {
+            elements.suggestionsList.innerHTML = '<p class="pane-placeholder">Debug mode is off. Enable debug mode in the sidebar footer to view suggestions.</p>';
+            elements.errorsList.innerHTML = '<p class="pane-placeholder">Debug mode is off. Enable debug mode in the sidebar footer to view error logs.</p>';
+            return;
         }
-    }
 
-    // Fetch suggestions
-    async function fetchSuggestions() {
+        elements.suggestionsList.innerHTML = '<div class="loading-shimmer" style="height: 60px;"></div>';
+        elements.errorsList.innerHTML = '<div class="loading-shimmer" style="height: 60px;"></div>';
+
+        // Retrieve suggestions
         try {
             const response = await fetch("/api/chat", {
                 method: "POST",
@@ -469,7 +605,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const items = data.response.split(" | ");
                 
                 if (items.length === 1 && items[0].includes("No suggestions")) {
-                    html = `<p style="text-align:center; padding: 20px 0;">${items[0]}</p>`;
+                    html = `<p class="pane-placeholder">${items[0]}</p>`;
                 } else {
                     items.forEach(item => {
                         const idx = item.indexOf(":");
@@ -484,16 +620,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         `;
                     });
                 }
-                
-                showModal("Improvement Suggestions", html);
+                elements.suggestionsList.innerHTML = html;
             }
         } catch (error) {
-            showModal("Error", "<p>Failed to retrieve suggestions from backend.</p>");
+            elements.suggestionsList.innerHTML = '<p class="pane-placeholder" style="color:#ff0844;">Failed to retrieve system suggestions.</p>';
         }
-    }
 
-    // Fetch errors
-    async function fetchErrors() {
+        // Retrieve errors
         try {
             const response = await fetch("/api/chat", {
                 method: "POST",
@@ -507,7 +640,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const items = data.response.split(" | ");
                 
                 if (items.length === 1 && items[0].includes("No errors")) {
-                    html = `<p style="text-align:center; padding: 20px 0;">${items[0]}</p>`;
+                    html = `<p class="pane-placeholder">${items[0]}</p>`;
                 } else {
                     items.forEach(item => {
                         const tsMatch = item.match(/^\[(.*?)\]/);
@@ -524,16 +657,15 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <span><i class="fa-solid fa-bug" style="color:#ff0844;"></i> ${component.trim()}</span>
                                     <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">${ts}</span>
                                 </div>
-                                <div style="margin-top: 4px; font-family: monospace; font-size:0.8rem; word-break: break-all;">${msg.trim()}</div>
+                                <div style="margin-top: 4px; font-family: monospace; font-size:0.75rem; word-break: break-all;">${msg.trim()}</div>
                             </div>
                         `;
                     });
                 }
-                
-                showModal("Error Log History", html);
+                elements.errorsList.innerHTML = html;
             }
         } catch (error) {
-            showModal("Error", "<p>Failed to retrieve errors from backend.</p>");
+            elements.errorsList.innerHTML = '<p class="pane-placeholder" style="color:#ff0844;">Failed to retrieve error logs.</p>';
         }
     }
 
@@ -553,11 +685,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (state.debug) {
                     elements.btnDebug.classList.add("active");
                     elements.debugStateText.textContent = "ON";
-                    elements.debugActionsPane.classList.remove("hidden");
                 } else {
                     elements.btnDebug.classList.remove("active");
                     elements.debugStateText.textContent = "OFF";
-                    elements.debugActionsPane.classList.add("hidden");
+                }
+                
+                // Refresh dashboard listings
+                if (state.activeView === "settings") {
+                    fetchDebugDashboardData();
                 }
             }
         } catch (error) {
@@ -616,7 +751,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state.isRecording) {
             state.recognition.stop();
         } else {
-            // Cancel any current speaking greetings
+            // Cancel active audio
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
             }
@@ -644,7 +779,6 @@ document.addEventListener("DOMContentLoaded", () => {
         window.addEventListener("touchend", dragEnd);
 
         function dragStart(e) {
-            // Click only triggers if dragging doesn't occur
             state.isDragging = true;
             orb.style.transition = "none";
             orb.style.animationPlayState = "paused";
@@ -662,7 +796,6 @@ document.addEventListener("DOMContentLoaded", () => {
         function dragMove(e) {
             if (!state.isDragging) return;
 
-            // Prevent scroll on mobile touch events
             if (e.type === "touchmove") {
                 e.preventDefault();
             }
@@ -670,11 +803,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
             const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
 
-            // Calculate new position relative to viewport
             let x = clientX - startX;
             let y = clientY - startY;
 
-            // Clamp coordinates inside viewport bounds
+            // Viewport clamping
             const rect = orb.getBoundingClientRect();
             const maxX = window.innerWidth - rect.width;
             const maxY = window.innerHeight - rect.height;
@@ -682,15 +814,12 @@ document.addEventListener("DOMContentLoaded", () => {
             x = Math.max(0, Math.min(x, maxX));
             y = Math.max(0, Math.min(y, maxY));
 
-            // Track displacement
             displacementX = x - state.wanderX;
             displacementY = y - state.wanderY;
 
-            // Update state coordinates
             state.wanderX = x;
             state.wanderY = y;
 
-            // Apply style positions
             orb.style.left = x + "px";
             orb.style.top = y + "px";
             orb.style.right = "auto";
@@ -701,33 +830,28 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!state.isDragging) return;
             state.isDragging = false;
 
-            // Restore float animation
             orb.style.transition = "box-shadow 0.5s ease";
             orb.style.animationPlayState = "running";
 
-            // If we wander, clear targets to start wandering from this spot
             state.targetX = null;
             state.targetY = null;
 
             const distanceMoved = Math.sqrt(displacementX * displacementX + displacementY * displacementY);
 
-            // Tap gesture threshold (6px)
+            // Tap gesture threshold
             if (distanceMoved < 6) {
                 playOrbGreeting();
             }
         }
     }
 
-    // Initialize wander coordinates to default bottom-right viewport location
     function initWanderCoordinates() {
         const orb = elements.lyraAvatar;
         const rect = orb.getBoundingClientRect();
         
-        // Grab current computed styles (or default right/bottom location)
         state.wanderX = rect.left;
         state.wanderY = rect.top;
         
-        // Make sure style matches coordinates
         orb.style.left = state.wanderX + "px";
         orb.style.top = state.wanderY + "px";
         orb.style.right = "auto";
@@ -737,15 +861,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Autonomous wandering animation loop
     function avatarWanderLoop() {
         const orb = elements.lyraAvatar;
-
-        // Check if movement settings allow autonomous floating
         const mode = state.settings.movementMode;
         const shouldWander = (mode === "wander" || mode === "both");
 
         if (shouldWander && !state.isDragging) {
             const rect = orb.getBoundingClientRect();
 
-            // Set new random coordinate target if none exists
             if (state.targetX === null || state.targetY === null) {
                 const margin = 40;
                 const maxX = window.innerWidth - rect.width - margin;
@@ -755,29 +876,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 state.targetY = Math.random() * (maxY - margin) + margin;
             }
 
-            // Calculate directional step
             const dx = state.targetX - state.wanderX;
             const dy = state.targetY - state.wanderY;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist < 10) {
-                // Arrived at target, clear so it picks a new one next frame
                 state.targetX = null;
                 state.targetY = null;
             } else {
-                // Move towards target coordinates
                 const step = Math.min(dist, state.wanderSpeed);
                 state.wanderX += (dx / dist) * step;
                 state.wanderY += (dy / dist) * step;
 
-                // Apply style rules
                 orb.style.left = state.wanderX + "px";
                 orb.style.top = state.wanderY + "px";
                 orb.style.right = "auto";
                 orb.style.bottom = "auto";
             }
         } else if (!shouldWander && !state.isDragging && (orb.style.left === "" || orb.style.left === "0px")) {
-            // Keep matching wanderX and wanderY to its bottom-right layout position
             const rect = orb.getBoundingClientRect();
             state.wanderX = rect.left;
             state.wanderY = rect.top;
@@ -794,7 +910,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // De-select active item
         document.querySelectorAll(".history-item").forEach(item => item.classList.remove("active"));
         
         state.activeSession = null;
@@ -822,7 +937,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!state.sessions[id]) return;
         state.activeSession = id;
         
-        // Mark active in sidebar
         document.querySelectorAll(".history-item").forEach(item => {
             item.classList.remove("active");
             if (item.getAttribute("data-id") === id) {
@@ -830,7 +944,6 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
-        // Render session dialogue messages
         elements.messagesArea.innerHTML = "";
         const messages = state.sessions[id].messages;
 
@@ -846,7 +959,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
         
-        elements.chatInput.focus();
+        showChatView();
     }
 
     function updateHistorySidebar() {

@@ -13,6 +13,9 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Twinkling Stardust Constellation Backdrop -->
+    <div class="twinkling-stars" id="twinkling-stars"></div>
+
     <!-- Animated background glowing blobs -->
     <div class="background-blobs">
         <div id="blob-1" class="blob"></div>
@@ -20,12 +23,15 @@
         <div id="blob-3" class="blob"></div>
     </div>
 
-    <!-- Draggable Floating Avatar Orb -->
+    <!-- Draggable Floating Avatar Orb (Vega Star) -->
     <div id="lyra-avatar" class="lyra-orb casual" title="Drag me anywhere! Click to talk.">
         <div class="orb-core"></div>
         <div class="orb-ring-1"></div>
         <div class="orb-ring-2"></div>
         <div class="orb-glow"></div>
+        <!-- Speech Waves -->
+        <div class="orb-wave wave-1"></div>
+        <div class="orb-wave wave-2"></div>
     </div>
 
     <div class="app-container">
@@ -57,24 +63,16 @@
                 </div>
             </div>
             
-            <!-- Sidebar Footer: Settings & Debug -->
+            <!-- Sidebar Footer: Debug Toggle Only -->
             <div class="sidebar-footer glass-panel">
                 <div class="debug-controls">
                     <button id="btn-debug" class="debug-toggle">
                         <i class="fa-solid fa-terminal"></i>
                         <span>Debug Mode: <b id="debug-state">OFF</b></span>
                     </button>
-                    <div class="debug-actions hidden" id="debug-actions-pane">
-                        <button id="btn-suggestions" class="debug-action-btn" title="View Suggestions">
-                            <i class="fa-solid fa-lightbulb"></i> Suggestions
-                        </button>
-                        <button id="btn-errors" class="debug-action-btn" title="View Errors">
-                            <i class="fa-solid fa-bug"></i> Error Log
-                        </button>
-                    </div>
                 </div>
                 <div class="system-meta">
-                    <span>Second Brain AI</span>
+                    <span>Vega Stellar Brain</span>
                     <span id="model-indicator">LLaMA 3.3</span>
                 </div>
             </div>
@@ -82,8 +80,8 @@
 
         <!-- Main Workspace -->
         <main class="workspace">
-            <!-- Centered Chat Container -->
-            <section class="chat-container">
+            <!-- VIEW 1: Chat Panel -->
+            <section id="chat-view" class="chat-container">
                 <!-- Welcome View (Shown when chat is empty) -->
                 <div id="welcome-view" class="welcome-screen">
                     <div class="welcome-content">
@@ -120,20 +118,101 @@
                     </div>
                 </div>
             </section>
-        </main>
-    </div>
 
-    <!-- Modals for Suggestions / Errors -->
-    <div id="modal-container" class="modal-overlay hidden">
-        <div class="modal glass-panel">
-            <div class="modal-header">
-                <h3 id="modal-title">Details</h3>
-                <button id="btn-close-modal" class="close-btn">&times;</button>
-            </div>
-            <div id="modal-body" class="modal-content">
-                <!-- Content injected here -->
-            </div>
-        </div>
+            <!-- VIEW 2: Settings Panel Dashboard (NEW Page View) -->
+            <section id="settings-view" class="settings-container hidden">
+                <div class="settings-content-wrapper">
+                    <header class="settings-header">
+                        <h2><i class="fa-solid fa-sliders"></i> Systems Control</h2>
+                        <p>Configure Lyra's parameters, voice controls, and self-improvement feedback.</p>
+                    </header>
+
+                    <div class="settings-grid">
+                        <!-- Card 1: Voice & Speech Engine -->
+                        <div class="settings-card glass-panel">
+                            <h3><i class="fa-solid fa-microphone-lines"></i> Speech & Audio Output</h3>
+                            
+                            <div class="settings-row">
+                                <div class="setting-label-block">
+                                    <span class="setting-label">Voice Reply</span>
+                                    <span class="setting-desc">Enable spoken text responses</span>
+                                </div>
+                                <div class="voice-reply-toggle">
+                                    <button id="btn-speech-yes" class="toggle-choice active">Yes</button>
+                                    <button id="btn-speech-no" class="toggle-choice">No</button>
+                                </div>
+                            </div>
+
+                            <div class="settings-group" id="volume-settings-group">
+                                <div class="slider-header">
+                                    <label><i class="fa-solid fa-volume-high" id="volume-icon"></i> Response Volume</label>
+                                    <span id="volume-val">80%</span>
+                                </div>
+                                <input type="range" id="settings-voice-volume" class="settings-slider" min="0" max="100" step="5" value="80">
+                            </div>
+
+                            <div class="settings-group">
+                                <label><i class="fa-solid fa-waveform"></i> Voice Tone (Online / Natural Girls Preferred)</label>
+                                <select id="settings-voice" class="settings-control">
+                                    <!-- Populated dynamically -->
+                                </select>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="slider-header">
+                                    <label><i class="fa-solid fa-gauge-high"></i> Speaking Speed</label>
+                                    <span id="rate-val">1.0x</span>
+                                </div>
+                                <input type="range" id="settings-voice-rate" class="settings-slider" min="0.5" max="1.6" step="0.1" value="1.0">
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Stellar Avatar Controls -->
+                        <div class="settings-card glass-panel">
+                            <h3><i class="fa-solid fa-arrows-spin"></i> Stellar Avatar (Vega Star)</h3>
+                            
+                            <div class="settings-group">
+                                <label><i class="fa-solid fa-compass"></i> Orb Movement Mode</label>
+                                <select id="settings-avatar-mode" class="settings-control">
+                                    <option value="drag">Draggable Only (Sits in place)</option>
+                                    <option value="wander">Autonomous Wandering (Floats around)</option>
+                                    <option value="both">Draggable & Wandering (Resumes on drop)</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Help Guidance -->
+                            <div class="info-tip-box">
+                                <div class="tip-header">
+                                    <i class="fa-solid fa-circle-info"></i>
+                                    <h4>Robotic Voice Fix & Tip</h4>
+                                </div>
+                                <p>Standard system voices are offline and sound mechanical. Open this page in <b>Microsoft Edge</b> or <b>Google Chrome</b> to unlock high-quality <b>Online "Natural" voices</b>. Online/Natural voices sound realistic and human!</p>
+                            </div>
+                        </div>
+
+                        <!-- Debug Section: Suggestions & Errors (Dynamic Dashboard) -->
+                        <div class="settings-card glass-panel full-width-card" id="debug-dashboard-card">
+                            <h3><i class="fa-solid fa-terminal"></i> Self-Improvement & Logs Dashboard</h3>
+                            
+                            <div class="debug-dashboard-grid">
+                                <div class="debug-pane">
+                                    <h4><i class="fa-solid fa-lightbulb" style="color: #f6d365;"></i> Suggested Improvements</h4>
+                                    <div id="settings-suggestions-list" class="dashboard-pane-list">
+                                        <p class="pane-placeholder">Enable debug mode to retrieve suggesting corrections...</p>
+                                    </div>
+                                </div>
+                                <div class="debug-pane">
+                                    <h4><i class="fa-solid fa-bug" style="color: #ff0844;"></i> Recent System Errors</h4>
+                                    <div id="settings-errors-list" class="dashboard-pane-list">
+                                        <p class="pane-placeholder">Enable debug mode to retrieve error logs...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 
     <script src="app.js"></script>

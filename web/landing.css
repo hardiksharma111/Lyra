@@ -28,39 +28,62 @@
 
 /* ---- LIGHT / MORNING THEME ---- */
 [data-theme="light"] {
-    --bg-primary: #fdf8f0;
-    --bg-card: rgba(0, 0, 0, 0.02);
-    --bg-card-hover: rgba(0, 0, 0, 0.05);
-    --bg-navbar: rgba(253, 248, 240, 0.75);
-    --accent-main: #d4880f;
-    --accent-glow: rgba(212, 136, 15, 0.35);
-    --accent-indigo: #b45309;
-    --accent-cyan: #ea580c;
-    --text-primary: #1c1917;
-    --text-secondary: #57534e;
-    --text-muted: #a8a29e;
-    --glass-border: rgba(180, 83, 9, 0.1);
-    --card-border: rgba(0, 0, 0, 0.06);
-    --card-border-hover: rgba(180, 83, 9, 0.2);
-    --canvas-star-color: rgba(212, 136, 15, 0.85);
-    --canvas-line-color: rgba(212, 136, 15, 0.25);
-    --radar-grid: rgba(180, 83, 9, 0.1);
-    --radar-data: rgba(234, 88, 12, 0.18);
-    --radar-stroke: rgba(234, 88, 12, 0.5);
-    --cta-gradient: rgba(234, 88, 12, 0.08);
+    --bg-primary: #faf8f5;
+    --bg-card: rgba(255, 255, 255, 0.6);
+    --bg-card-hover: rgba(255, 255, 255, 0.9);
+    --bg-navbar: rgba(250, 248, 245, 0.85);
+    --accent-main: #f57a00;
+    --accent-glow: rgba(245, 122, 0, 0.35);
+    --accent-indigo: #8a4fff;
+    --accent-cyan: #ff3b84;
+    --text-primary: #1e1b26;
+    --text-secondary: #575366;
+    --text-muted: #9490a6;
+    --glass-border: rgba(245, 122, 0, 0.15);
+    --card-border: rgba(0, 0, 0, 0.05);
+    --card-border-hover: rgba(245, 122, 0, 0.3);
+    
+    /* High contrast constellations for light mode */
+    --canvas-star-color: rgba(245, 122, 0, 1); 
+    --canvas-line-color: rgba(245, 122, 0, 0.4); 
+    
+    --radar-grid: rgba(245, 122, 0, 0.15);
+    --radar-data: rgba(138, 79, 255, 0.15);
+    --radar-stroke: rgba(138, 79, 255, 0.8);
+    --cta-gradient: rgba(138, 79, 255, 0.1);
 }
 
-/* Theme transition */
+/* Light mode dynamic animated background */
+[data-theme="light"] body {
+    background: linear-gradient(135deg, #fffcf9 0%, #ffe8d6 100%);
+    background-size: 200% 200%;
+    animation: sunriseGradient 15s ease infinite;
+}
+
+@keyframes sunriseGradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Light mode "sun motes" instead of twinkling stars */
 [data-theme="light"] .twinkling-stars .star {
-    background-color: #fcd34d;
-    box-shadow: 0 0 6px rgba(252, 211, 77, 0.8);
+    background-color: #ffffff;
+    box-shadow: 0 0 10px rgba(245, 122, 0, 0.6);
+    animation: sunMotes 6s infinite ease-in-out;
 }
 
-[data-theme="light"] .const-line { stroke: var(--accent-main); }
+@keyframes sunMotes {
+    0% { opacity: 0; transform: translateY(0) scale(0.8); }
+    50% { opacity: 1; transform: translateY(-30px) scale(1.5); }
+    100% { opacity: 0; transform: translateY(-60px) scale(0.8); }
+}
+
+[data-theme="light"] .const-line { stroke: var(--accent-main); opacity: 0.8; }
 [data-theme="light"] .const-star { fill: var(--accent-main); }
-[data-theme="light"] .vega-star { fill: #b45309; filter: drop-shadow(0 0 8px rgba(180, 83, 9, 0.5)); }
+[data-theme="light"] .vega-star { fill: #ffffff; filter: drop-shadow(0 0 10px #f57a00); }
 [data-theme="light"] .vega-glow-ring { stroke: var(--accent-main); }
-[data-theme="light"] .star-label { fill: var(--accent-main); }
+[data-theme="light"] .star-label { fill: var(--accent-main); font-weight: 700; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 

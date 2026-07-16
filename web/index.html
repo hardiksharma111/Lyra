@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyra — Second Brain</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for modern icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar for Memory & Status -->
+        <aside class="sidebar glass">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-dot"></span>
+                    <h1>LYRA</h1>
+                </div>
+                <span class="version-badge">v0.6</span>
+            </div>
+
+            <!-- Avatar Card -->
+            <div class="avatar-card glass-panel">
+                <div class="avatar-container">
+                    <div id="lyra-avatar" class="lyra-orb casual">
+                        <div class="orb-core"></div>
+                        <div class="orb-ring-1"></div>
+                        <div class="orb-ring-2"></div>
+                    </div>
+                </div>
+                <div class="avatar-status">
+                    <h3 id="lyra-mood-title">Casual Mood</h3>
+                    <p id="lyra-time-title">Late Evening</p>
+                </div>
+            </div>
+
+            <!-- Memory Section -->
+            <div class="sidebar-section">
+                <h2><i class="fa-solid fa-brain"></i> Memory Categories</h2>
+                <div id="memory-categories" class="categories-list">
+                    <div class="loading-shimmer"></div>
+                </div>
+            </div>
+
+            <!-- Integrations / System Status -->
+            <div class="sidebar-section">
+                <h2><i class="fa-solid fa-server"></i> Integrations</h2>
+                <ul class="status-list">
+                    <li>
+                        <span>Spotify</span>
+                        <span id="status-spotify" class="status-indicator offline"><i class="fa-solid fa-circle"></i></span>
+                    </li>
+                    <li>
+                        <span>Gmail</span>
+                        <span id="status-gmail" class="status-indicator offline"><i class="fa-solid fa-circle"></i></span>
+                    </li>
+                    <li>
+                        <span>Classroom</span>
+                        <span id="status-classroom" class="status-indicator offline"><i class="fa-solid fa-circle"></i></span>
+                    </li>
+                    <li>
+                        <span>WhatsApp (Baileys)</span>
+                        <span id="status-whatsapp" class="status-indicator offline"><i class="fa-solid fa-circle"></i></span>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="sidebar-footer">
+                <p>Private & Secure · Locally Hosted</p>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <header class="workspace-header glass">
+                <div class="header-left">
+                    <h2>Workspace</h2>
+                    <span id="model-indicator" class="model-badge">LLaMA 3.3 70B</span>
+                </div>
+                <div class="header-right">
+                    <button id="btn-suggestions" class="icon-btn" title="View Suggestions"><i class="fa-solid fa-lightbulb"></i></button>
+                    <button id="btn-errors" class="icon-btn" title="View Errors"><i class="fa-solid fa-bug"></i></button>
+                    <button id="btn-debug" class="text-btn"><i class="fa-solid fa-terminal"></i> Debug: <span id="debug-state">OFF</span></button>
+                </div>
+            </header>
+
+            <!-- Chat Section -->
+            <section class="chat-container">
+                <div id="chat-messages" class="messages-area">
+                    <div class="message system-msg">
+                        <p>Welcome back, Hardik. Lyra is online and connected to your second brain.</p>
+                    </div>
+                </div>
+
+                <!-- Input area -->
+                <div class="input-container glass">
+                    <textarea id="chat-input" placeholder="Ask Lyra something..." rows="1"></textarea>
+                    <div class="input-actions">
+                        <button id="btn-mic" class="action-btn" title="Voice Input"><i class="fa-solid fa-microphone"></i></button>
+                        <button id="btn-send" class="action-btn primary-btn" title="Send Message"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals for Suggestions / Errors -->
+    <div id="modal-container" class="modal-overlay hidden">
+        <div class="modal glass-panel">
+            <div class="modal-header">
+                <h3 id="modal-title">Details</h3>
+                <button id="btn-close-modal" class="close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-content">
+                <!-- Content injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

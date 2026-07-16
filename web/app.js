@@ -1,5 +1,5 @@
 /* ==========================================
-   Lyra Web Interface - Frontend Client Logic
+   Lyra Premium Web Interface - App Logic
    ========================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -8,7 +8,9 @@ document.addEventListener("DOMContentLoaded", () => {
         mood: "casual",
         debug: false,
         isRecording: false,
-        recognition: null
+        recognition: null,
+        activeSession: null,
+        sessions: {} // { id: { title: "", messages: [...] } }
     };
 
     // DOM Elements
@@ -18,22 +20,20 @@ document.addEventListener("DOMContentLoaded", () => {
         btnSend: document.getElementById("btn-send"),
         btnMic: document.getElementById("btn-mic"),
         lyraAvatar: document.getElementById("lyra-avatar"),
-        lyraMoodTitle: document.getElementById("lyra-mood-title"),
-        lyraTimeTitle: document.getElementById("lyra-time-title"),
-        memoryCategories: document.getElementById("memory-categories"),
-        statusSpotify: document.getElementById("status-spotify"),
-        statusGmail: document.getElementById("status-gmail"),
-        statusClassroom: document.getElementById("status-classroom"),
-        statusWhatsapp: document.getElementById("status-whatsapp"),
+        avatarTooltip: document.getElementById("avatar-tooltip"),
         modelIndicator: document.getElementById("model-indicator"),
         debugStateText: document.getElementById("debug-state"),
         btnSuggestions: document.getElementById("btn-suggestions"),
         btnErrors: document.getElementById("btn-errors"),
         btnDebug: document.getElementById("btn-debug"),
+        debugActionsPane: document.getElementById("debug-actions-pane"),
         modalOverlay: document.getElementById("modal-container"),
         modalTitle: document.getElementById("modal-title"),
         modalBody: document.getElementById("modal-body"),
-        btnCloseModal: document.getElementById("btn-close-modal")
+        btnCloseModal: document.getElementById("btn-close-modal"),
+        btnNewChat: document.getElementById("btn-new-chat"),
+        chatHistoryList: document.getElementById("chat-history-list"),
+        welcomeView: document.getElementById("welcome-view")
     };
 
     // Initialize Page
@@ -56,10 +56,11 @@ document.addEventListener("DOMContentLoaded", () => {
         setupSpeechRecognition();
         elements.btnMic.addEventListener("click", toggleVoiceInput);
 
-        // Sidebar utility action listeners
+        // Sidebar actions
+        elements.btnNewChat.addEventListener("click", startNewChat);
+        elements.btnDebug.addEventListener("click", toggleDebugMode);
         elements.btnSuggestions.addEventListener("click", fetchSuggestions);
         elements.btnErrors.addEventListener("click", fetchErrors);
-        elements.btnDebug.addEventListener("click", toggleDebugMode);
 
         // Modal close listeners
         elements.btnCloseModal.addEventListener("click", hideModal);
@@ -67,18 +68,27 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.target === elements.modalOverlay) hideModal();
         });
 
-        // Orb interactive greeting
-        elements.lyraAvatar.addEventListener("click", playOrbGreeting);
+        // Quick prompts click listener
+        document.querySelectorAll(".prompt-card").forEach(card => {
+            card.addEventListener("click", () => {
+                const prompt = card.getAttribute("data-prompt");
+                elements.chatInput.value = prompt;
+                autoGrowInput();
+                sendMessage();
+            });
+        });
 
-        // Initial data load
+        // Set up draggable floating avatar
+        setupDraggableAvatar();
+
+        // Load sessions from local storage
+        loadSessions();
+
+        // Initial status load
         updateSystemStatus();
-        updateMemoryCategories();
-
-        // Focus input
-        elements.chatInput.focus();
-
-        // Refresh status every 15 seconds
         setInterval(updateSystemStatus, 15000);
+
+        elements.chatInput.focus();
     }
 
     // Input height adjustments
@@ -88,7 +98,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Append a message to the chat display
-    function appendMessage(sender, text) {
+    function appendMessage(sender, text, save = true) {
+        // Hide welcome view if first message
+        if (elements.welcomeView && !elements.welcomeView.classList.contains("hidden")) {
+            elements.welcomeView.classList.add("hidden");
+            elements.messagesArea.classList.remove("hidden");
+        }
+
         const msgDiv = document.createElement("div");
         msgDiv.className = `message ${sender}-msg`;
         
@@ -99,14 +115,25 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.messagesArea.appendChild(msgDiv);
         elements.messagesArea.scrollTop = elements.messagesArea.scrollHeight;
         
-        // Remove typing indicator if present
         removeTypingIndicator();
+
+        if (save && state.activeSession) {
+            state.sessions[state.activeSession].messages.push({ sender, text });
+            saveSessions();
+            updateHistorySidebar();
+        }
     }
 
     // Typing indicator
     function showTypingIndicator() {
         if (document.getElementById("typing-indicator")) return;
         
+        // Hide welcome view if showing
+        if (elements.welcomeView && !elements.welcomeView.classList.contains("hidden")) {
+            elements.welcomeView.classList.add("hidden");
+            elements.messagesArea.classList.remove("hidden");
+        }
+
         const typingDiv = document.createElement("div");
         typingDiv.id = "typing-indicator";
         typingDiv.className = "message agent-msg";
@@ -128,6 +155,11 @@ document.addEventListener("DOMContentLoaded", () => {
     async function sendMessage() {
         const text = elements.chatInput.value.trim();
         if (!text) return;
+
+        // Create new session if none is active
+        if (!state.activeSession) {
+            createNewSession(text.length > 25 ? text.substring(0, 25) + "..." : text);
+        }
 
         // Reset input area
         elements.chatInput.value = "";
@@ -152,22 +184,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.mood) {
                     setOrbMood(data.mood);
                 }
-                if (data.time) {
-                    elements.lyraTimeTitle.textContent = data.time;
-                }
                 
-                // Trigger web speech synthesis for spoken outputs if appropriate
+                // Trigger web speech synthesis for spoken outputs
                 if (data.speak && 'speechSynthesis' in window) {
                     const utterance = new SpeechSynthesisUtterance(data.response);
-                    // Match speech settings
                     utterance.rate = 1.05;
-                    utterance.pitch = 1.0;
                     window.speechSynthesis.speak(utterance);
                 }
-                
-                // Refresh memory/integrations in case it learned something or updated state
-                updateMemoryCategories();
-                updateSystemStatus();
             } else {
                 appendMessage("agent", `Error: ${data.error || "failed to communicate with Lyra core."}`);
             }
@@ -177,7 +200,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Set Avatar Mood Classes & Label
+    // Set Avatar Mood Classes & Tooltip
     function setOrbMood(mood) {
         const validMoods = ["casual", "focused", "concerned", "alert", "curious", "playful"];
         if (!validMoods.includes(mood)) mood = "casual";
@@ -189,8 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.lyraAvatar.classList.add(mood);
         state.mood = mood;
 
-        // Capitalize title
-        elements.lyraMoodTitle.textContent = mood.charAt(0).toUpperCase() + mood.slice(1) + " Mood";
+        // Update tooltip text
+        elements.avatarTooltip.textContent = mood.charAt(0).toUpperCase() + mood.slice(1) + " Mood";
     }
 
     // Interactive Orb Greet
@@ -215,74 +238,31 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Fetch and render memory categories
-    async function updateMemoryCategories() {
-        try {
-            const response = await fetch("/api/memory");
-            const data = await response.json();
-            
-            if (data.status === "ok" && data.categories) {
-                elements.memoryCategories.innerHTML = "";
-                
-                if (data.categories.length === 0) {
-                    elements.memoryCategories.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; width:100%;">No memory profiles yet.</p>';
-                    return;
-                }
-                
-                data.categories.forEach(cat => {
-                    const tag = document.createElement("div");
-                    tag.className = "category-tag";
-                    tag.textContent = cat;
-                    tag.addEventListener("click", () => {
-                        elements.chatInput.value = `Tell me about my memory category: ${cat}`;
-                        elements.chatInput.focus();
-                        autoGrowInput();
-                    });
-                    elements.memoryCategories.appendChild(tag);
-                });
-            }
-        } catch (error) {
-            console.error("Error loading memory categories:", error);
-        }
-    }
-
-    // Fetch and update system integrations status
+    // Fetch and update system status (minimalist)
     async function updateSystemStatus() {
         try {
             const response = await fetch("/api/status");
             const data = await response.json();
             
             if (data.status === "ok") {
-                // Update integration indicators
-                updateIndicator(elements.statusSpotify, data.services.spotify);
-                updateIndicator(elements.statusGmail, data.services.gmail);
-                updateIndicator(elements.statusClassroom, data.services.classroom);
-                updateIndicator(elements.statusWhatsapp, data.services.whatsapp);
-
-                // Update info panels
-                elements.modelIndicator.textContent = data.model;
-                elements.debugStateText.textContent = data.debug ? "ON" : "OFF";
+                // Update debug status
+                if (data.debug) {
+                    elements.btnDebug.classList.add("active");
+                    elements.debugStateText.textContent = "ON";
+                    elements.debugActionsPane.classList.remove("hidden");
+                } else {
+                    elements.btnDebug.classList.remove("active");
+                    elements.debugStateText.textContent = "OFF";
+                    elements.debugActionsPane.classList.add("hidden");
+                }
                 state.debug = data.debug;
 
                 if (data.mood) {
                     setOrbMood(data.mood);
                 }
-                if (data.time) {
-                    elements.lyraTimeTitle.textContent = data.time;
-                }
             }
         } catch (error) {
             console.error("Error loading status:", error);
-        }
-    }
-
-    function updateIndicator(element, online) {
-        if (online) {
-            element.classList.remove("offline");
-            element.classList.add("online");
-        } else {
-            element.classList.remove("online");
-            element.classList.add("offline");
         }
     }
 
@@ -399,11 +379,15 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (data.status === "ok") {
                 state.debug = !state.debug;
-                elements.debugStateText.textContent = state.debug ? "ON" : "OFF";
-                appendMessage("system", `System debug logs toggled ${state.debug ? "ON" : "OFF"}`);
-                
-                // Force sync info
-                updateSystemStatus();
+                if (state.debug) {
+                    elements.btnDebug.classList.add("active");
+                    elements.debugStateText.textContent = "ON";
+                    elements.debugActionsPane.classList.remove("hidden");
+                } else {
+                    elements.btnDebug.classList.remove("active");
+                    elements.debugStateText.textContent = "OFF";
+                    elements.debugActionsPane.classList.add("hidden");
+                }
             }
         } catch (error) {
             console.error("Error toggling debug mode:", error);
@@ -466,6 +450,201 @@ document.addEventListener("DOMContentLoaded", () => {
                 window.speechSynthesis.cancel();
             }
             state.recognition.start();
+        }
+    }
+
+    // ==========================================
+    // Floating Draggable Avatar Orb Code
+    // ==========================================
+    function setupDraggableAvatar() {
+        const orb = elements.lyraAvatar;
+        let isDragging = false;
+        let startX, startY;
+        let initialX, initialY;
+        let displacementX = 0;
+        let displacementY = 0;
+
+        // Mouse Drag events
+        orb.addEventListener("mousedown", dragStart);
+        window.addEventListener("mousemove", dragMove);
+        window.addEventListener("mouseup", dragEnd);
+
+        // Touch drag events (Mobile)
+        orb.addEventListener("touchstart", dragStart, { passive: true });
+        window.addEventListener("touchmove", dragMove, { passive: false });
+        window.addEventListener("touchend", dragEnd);
+
+        function dragStart(e) {
+            isDragging = true;
+            orb.style.transition = "none";
+            orb.style.animationPlayState = "paused";
+
+            const clientX = e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+
+            // Get absolute current top/left coordinates
+            const rect = orb.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+
+            startX = clientX - initialX;
+            startY = clientY - initialY;
+            
+            displacementX = 0;
+            displacementY = 0;
+        }
+
+        function dragMove(e) {
+            if (!isDragging) return;
+
+            // Prevent scroll on mobile touch events
+            if (e.type === "touchmove") {
+                e.preventDefault();
+            }
+
+            const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+
+            // Calculate new position
+            let x = clientX - startX;
+            let y = clientY - startY;
+
+            // Keep within viewport boundaries
+            const rect = orb.getBoundingClientRect();
+            const maxX = window.innerWidth - rect.width;
+            const maxY = window.innerHeight - rect.height;
+
+            x = Math.max(0, Math.min(x, maxX));
+            y = Math.max(0, Math.min(y, maxY));
+
+            // Track displacement to check for a tap/click action vs a drag movement
+            displacementX = x - initialX;
+            displacementY = y - initialY;
+
+            // Apply style coordinates
+            orb.style.left = x + "px";
+            orb.style.top = y + "px";
+            orb.style.right = "auto";
+            orb.style.bottom = "auto";
+        }
+
+        function dragEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+
+            // Restore smooth visual float animation
+            orb.style.transition = "box-shadow 0.5s ease";
+            orb.style.animationPlayState = "running";
+
+            const distanceMoved = Math.sqrt(displacementX * displacementX + displacementY * displacementY);
+
+            // Click threshold: If user moved orb less than 5px, count it as a click/tap
+            if (distanceMoved < 6) {
+                playOrbGreeting();
+            }
+        }
+    }
+
+    // ==========================================
+    // Session History Sidebar Management
+    // ==========================================
+    function startNewChat() {
+        if (state.activeSession && state.sessions[state.activeSession].messages.length === 0) {
+            // Already in a blank session
+            return;
+        }
+
+        // De-select active item
+        document.querySelectorAll(".history-item").forEach(item => item.classList.remove("active"));
+        
+        state.activeSession = null;
+        elements.messagesArea.innerHTML = "";
+        elements.messagesArea.classList.add("hidden");
+        elements.welcomeView.classList.remove("hidden");
+        
+        elements.chatInput.value = "";
+        elements.chatInput.style.height = "auto";
+        elements.chatInput.focus();
+    }
+
+    function createNewSession(title) {
+        const id = "session_" + Date.now();
+        state.sessions[id] = {
+            title: title,
+            messages: []
+        };
+        state.activeSession = id;
+        saveSessions();
+        updateHistorySidebar();
+    }
+
+    function selectSession(id) {
+        if (!state.sessions[id]) return;
+        state.activeSession = id;
+        
+        // Mark active in sidebar
+        document.querySelectorAll(".history-item").forEach(item => {
+            item.classList.remove("active");
+            if (item.getAttribute("data-id") === id) {
+                item.classList.add("active");
+            }
+        });
+
+        // Render session dialogue messages
+        elements.messagesArea.innerHTML = "";
+        const messages = state.sessions[id].messages;
+
+        if (messages.length === 0) {
+            elements.welcomeView.classList.remove("hidden");
+            elements.messagesArea.classList.add("hidden");
+        } else {
+            elements.welcomeView.classList.add("hidden");
+            elements.messagesArea.classList.remove("hidden");
+            
+            messages.forEach(msg => {
+                appendMessage(msg.sender, msg.text, false);
+            });
+        }
+        
+        elements.chatInput.focus();
+    }
+
+    function updateHistorySidebar() {
+        elements.chatHistoryList.innerHTML = "";
+        
+        // Sort sessions by date (descending)
+        const sortedIds = Object.keys(state.sessions).sort((a, b) => b - a);
+
+        if (sortedIds.length === 0) {
+            elements.chatHistoryList.innerHTML = '<div style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding: 15px 0;">No past sessions</div>';
+            return;
+        }
+
+        sortedIds.forEach(id => {
+            const item = document.createElement("div");
+            item.className = `history-item ${id === state.activeSession ? "active" : ""}`;
+            item.setAttribute("data-id", id);
+            item.innerHTML = `<i class="fa-solid fa-message"></i> ${state.sessions[id].title}`;
+            
+            item.addEventListener("click", () => selectSession(id));
+            elements.chatHistoryList.appendChild(item);
+        });
+    }
+
+    function saveSessions() {
+        localStorage.setItem("lyra_chat_sessions", JSON.stringify(state.sessions));
+    }
+
+    function loadSessions() {
+        try {
+            const saved = localStorage.getItem("lyra_chat_sessions");
+            if (saved) {
+                state.sessions = JSON.parse(saved);
+                updateHistorySidebar();
+            }
+        } catch (e) {
+            console.error("Failed to load chat history:", e);
+            state.sessions = {};
         }
     }
 });

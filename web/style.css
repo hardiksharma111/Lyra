@@ -211,15 +211,9 @@ body {
     color: var(--text-secondary);
 }
 
-/* Sidebar layout actions */
-.sidebar-actions-container {
-    display: flex;
-    gap: 8px;
-    width: 100%;
-}
-
+/* New Chat full-width button */
 .new-chat-btn {
-    flex: 1;
+    width: 100%;
     padding: 12px;
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.03);
@@ -242,32 +236,37 @@ body {
     box-shadow: 0 0 15px rgba(188, 213, 255, 0.2);
 }
 
-.sidebar-settings-btn {
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: var(--text-primary);
+/* Full-width settings button in sidebar footer */
+.sidebar-settings-btn-full {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     transition: var(--transition-smooth);
 }
 
-.sidebar-settings-btn:hover, .sidebar-settings-btn.active {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 255, 255, 0.15);
+.sidebar-settings-btn-full:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
 }
 
-.sidebar-settings-btn.active i {
+.sidebar-settings-btn-full.active {
+    border-color: rgba(188, 213, 255, 0.2);
+    background: rgba(188, 213, 255, 0.05);
+}
+
+.sidebar-settings-btn-full.active i {
     color: var(--accent-vega);
-    transform: rotate(45deg);
-}
-
-.sidebar-settings-btn:hover i {
-    transform: rotate(30deg);
 }
 
 /* History items inside sidebar */
@@ -835,27 +834,7 @@ input[type="range"].settings-slider::-webkit-slider-thumb:hover {
     grid-column: span 2;
 }
 
-.debug-dashboard-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-top: 6px;
-}
-
-.debug-pane {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    min-height: 200px;
-}
-
-.debug-pane h4 {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-weight: 600;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-    padding-bottom: 6px;
-}
+/* Debug panels are now separate full-width cards, no grid needed */
 
 .dashboard-pane-list {
     flex: 1;
@@ -1103,6 +1082,112 @@ input[type="range"].settings-slider::-webkit-slider-thumb:hover {
     font-size: 0.9rem;
     line-height: 1.6;
     color: var(--text-secondary);
+}
+
+/* ==========================================
+   Command Palette
+   ========================================== */
+.cmd-palette-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(2, 1, 6, 0.7);
+    backdrop-filter: blur(8px);
+    z-index: 10001;
+    display: flex;
+    justify-content: center;
+    padding-top: 18vh;
+    animation: fadeIn 0.15s ease-out;
+}
+
+.cmd-palette {
+    width: 520px;
+    max-width: 90vw;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    overflow: hidden;
+    animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cmd-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cmd-search-wrap i {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.cmd-search-wrap input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+}
+
+.cmd-search-wrap input::placeholder {
+    color: var(--text-muted);
+}
+
+.cmd-search-wrap kbd {
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+}
+
+.cmd-results {
+    overflow-y: auto;
+    max-height: 300px;
+    padding: 6px;
+}
+
+.cmd-item {
+    padding: 10px 14px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+}
+
+.cmd-item:hover, .cmd-item.selected {
+    background: rgba(188, 213, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.cmd-item i {
+    width: 20px;
+    text-align: center;
+    color: var(--accent-vega);
+    font-size: 0.85rem;
+}
+
+.cmd-item-label {
+    flex: 1;
+}
+
+.cmd-item-shortcut {
+    font-size: 0.65rem;
+    color: var(--text-muted);
 }
 
 .hidden {

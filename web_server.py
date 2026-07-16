@@ -51,8 +51,11 @@ class LyraWebHandler(BaseHTTPRequestHandler):
             self.send_error_response(404, "Not Found")
 
     def handle_static_files(self, path):
-        # Default route to index.html
-        if path == "/" or path == "/index.html":
+        # Landing page at root
+        if path == "/" or path == "/landing.html":
+            file_path = os.path.join(WEB_DIR, "landing.html")
+        # Chat app at /app
+        elif path == "/app" or path == "/app/" or path == "/index.html":
             file_path = os.path.join(WEB_DIR, "index.html")
         else:
             # Strip leading slash and prevent directory traversal

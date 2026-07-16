@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lyra — The AI That Feels</title>
+    <meta name="description" content="Lyra is an emotionally intelligent AI companion that adapts to your mood, protects your well-being, and thinks alongside you.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="landing.css">
+</head>
+<body>
+    <!-- Drifting Constellation Background Canvas -->
+    <canvas id="constellation-canvas"></canvas>
+
+    <!-- Twinkling Stardust overlay -->
+    <div class="twinkling-stars" id="twinkling-stars"></div>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-inner">
+            <div class="nav-logo">
+                <span class="nav-dot"></span>
+                <span class="nav-brand">LYRA</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#vision">Vision</a>
+                <a href="#tech">Architecture</a>
+                <!-- Theme Toggle -->
+                <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Light/Dark Mode">
+                    <i class="fa-solid fa-sun" id="theme-icon-sun"></i>
+                    <i class="fa-solid fa-moon" id="theme-icon-moon"></i>
+                </button>
+                <a href="/app" class="nav-cta">Open Lyra <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="hero">
+        <div class="hero-constellation">
+            <svg class="constellation-svg" viewBox="0 0 600 500" xmlns="http://www.w3.org/2000/svg">
+                <line class="const-line" x1="300" y1="80" x2="220" y2="200"/>
+                <line class="const-line" x1="300" y1="80" x2="380" y2="200"/>
+                <line class="const-line" x1="220" y1="200" x2="200" y2="340"/>
+                <line class="const-line" x1="380" y1="200" x2="400" y2="340"/>
+                <line class="const-line" x1="200" y1="340" x2="300" y2="400"/>
+                <line class="const-line" x1="400" y1="340" x2="300" y2="400"/>
+                <line class="const-line" x1="220" y1="200" x2="380" y2="200"/>
+                <circle class="const-star vega-star" cx="300" cy="80" r="8"/>
+                <circle class="const-star" cx="220" cy="200" r="5"/>
+                <circle class="const-star" cx="380" cy="200" r="5"/>
+                <circle class="const-star" cx="200" cy="340" r="4"/>
+                <circle class="const-star" cx="400" cy="340" r="4"/>
+                <circle class="const-star" cx="300" cy="400" r="4"/>
+                <circle class="vega-glow-ring" cx="300" cy="80" r="20"/>
+                <circle class="vega-glow-ring vega-glow-ring-2" cx="300" cy="80" r="35"/>
+                <text class="star-label" x="300" y="55" text-anchor="middle">VEGA</text>
+                <text class="star-label" x="190" y="215" text-anchor="end">Sheliak</text>
+                <text class="star-label" x="410" y="215" text-anchor="start">Sulafat</text>
+            </svg>
+        </div>
+
+        <div class="hero-content">
+            <div class="hero-badge reveal-item">
+                <i class="fa-solid fa-sparkles"></i> Emotionally Intelligent AI
+            </div>
+            <h1 class="hero-title">
+                <span class="title-line reveal-item">The AI That</span>
+                <span class="title-line title-gradient reveal-item">Feels.</span>
+            </h1>
+            <p class="hero-subtitle reveal-item">
+                Lyra is your emotionally intelligent second brain — she reads between the lines, adapts to your energy, protects your well-being, and thinks alongside you.
+            </p>
+            <div class="hero-actions reveal-item">
+                <a href="/app" class="btn-primary">
+                    <i class="fa-solid fa-bolt"></i> Start a Conversation
+                </a>
+                <a href="#features" class="btn-ghost">
+                    Discover Features <i class="fa-solid fa-chevron-down"></i>
+                </a>
+            </div>
+
+            <!-- Stats counters -->
+            <div class="hero-stats reveal-item">
+                <div class="stat-item">
+                    <span class="stat-number" data-target="7">0</span>
+                    <span class="stat-label">Core Modules</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number" data-target="6">0</span>
+                    <span class="stat-label">Mood States</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number" data-target="5">0</span>
+                    <span class="stat-label">Integrations</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="scroll-indicator">
+            <div class="scroll-mouse"><div class="scroll-wheel"></div></div>
+        </div>
+    </section>
+
+    <!-- Features Section — Interactive Expandable Cards -->
+    <section class="features-section" id="features">
+        <div class="section-inner">
+            <div class="section-header reveal-item">
+                <span class="section-tag"><i class="fa-solid fa-wand-magic-sparkles"></i> Core Capabilities</span>
+                <h2>Click to Explore<br><span class="text-gradient">What Lyra Can Do</span></h2>
+                <p>Hover or tap each feature to see what makes Lyra different.</p>
+            </div>
+
+            <div class="features-orbit">
+                <!-- Feature 1: Shield Mode -->
+                <div class="feature-orb" data-feature="shield">
+                    <div class="orb-face">
+                        <div class="orb-icon shield-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                        <span class="orb-label">Shield Mode</span>
+                    </div>
+                    <div class="orb-expanded">
+                        <h3>Shield Mode</h3>
+                        <p class="feature-subtitle">Burnout Prevention Engine</p>
+                        <p>Lyra monitors your workload, schedule, and typing velocity. When she detects rising anxiety or consecutive 14-hour days, she steps in.</p>
+                        <div class="feature-quote">
+                            <i class="fa-solid fa-quote-left"></i>
+                            "Go grab a coffee. I've got your back."
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature 2: Empathy Mirror -->
+                <div class="feature-orb" data-feature="empathy">
+                    <div class="orb-face">
+                        <div class="orb-icon empathy-icon"><i class="fa-solid fa-comments"></i></div>
+                        <span class="orb-label">Empathy Mirror</span>
+                    </div>
+                    <div class="orb-expanded">
+                        <h3>Empathy Mirror</h3>
+                        <p class="feature-subtitle">Social Coaching Engine</p>
+                        <p>Run important emails by Lyra. She analyzes tone and predicts the recipient's emotional response before you hit send.</p>
+                        <div class="feature-quote">
+                            <i class="fa-solid fa-quote-left"></i>
+                            "This sounds defensive. Rephrase for collaboration."
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature 3: Mood Scheduling -->
+                <div class="feature-orb" data-feature="mood">
+                    <div class="orb-face">
+                        <div class="orb-icon mood-icon"><i class="fa-solid fa-masks-theater"></i></div>
+                        <span class="orb-label">Mood Scheduling</span>
+                    </div>
+                    <div class="orb-expanded">
+                        <h3>Mood-Driven Scheduling</h3>
+                        <p class="feature-subtitle">Cognitive Task Optimization</p>
+                        <p>Wake up sluggish? Lyra reschedules heavy analytical work and replaces it with low-stress creative brainstorming.</p>
+                        <div class="feature-demo-bar">
+                            <div class="energy-label">Energy Level</div>
+                            <div class="energy-bar"><div class="energy-fill" id="energy-fill"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature 4: Org Pulse -->
+                <div class="feature-orb" data-feature="org">
+                    <div class="orb-face">
+                        <div class="orb-icon org-icon"><i class="fa-solid fa-building"></i></div>
+                        <span class="orb-label">Org Pulse</span>
+                    </div>
+                    <div class="orb-expanded">
+                        <h3>Organizational Pulse</h3>
+                        <p class="feature-subtitle">Enterprise Emotional Dashboard</p>
+                        <p>Aggregate anonymous emotional health data across your company. Leadership sees fatigue trends without compromising privacy.</p>
+                        <div class="mini-chart">
+                            <div class="chart-bar" style="--h: 45%;" data-label="Mon"></div>
+                            <div class="chart-bar" style="--h: 65%;" data-label="Tue"></div>
+                            <div class="chart-bar" style="--h: 80%;" data-label="Wed"></div>
+                            <div class="chart-bar" style="--h: 55%;" data-label="Thu"></div>
+                            <div class="chart-bar" style="--h: 35%;" data-label="Fri"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature 5: Memory -->
+                <div class="feature-orb" data-feature="memory">
+                    <div class="orb-face">
+                        <div class="orb-icon memory-icon"><i class="fa-solid fa-brain"></i></div>
+                        <span class="orb-label">Episodic Memory</span>
+                    </div>
+                    <div class="orb-expanded">
+                        <h3>Persistent Memory</h3>
+                        <p class="feature-subtitle">Emotional Context Engine</p>
+                        <p>Lyra remembers emotional contexts — "you were stressed about that meeting last week — how did it go?"</p>
+                        <div class="memory-timeline">
+                            <div class="timeline-node" data-mood="stressed"><span>Stressed</span></div>
+                            <div class="timeline-connector"></div>
+                            <div class="timeline-node" data-mood="focused"><span>Focused</span></div>
+                            <div class="timeline-connector"></div>
+                            <div class="timeline-node" data-mood="happy"><span>Happy</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Vision Section with Radar Chart -->
+    <section class="vision-section" id="vision">
+        <div class="section-inner">
+            <div class="section-header reveal-item">
+                <span class="section-tag"><i class="fa-solid fa-eye"></i> The Vision</span>
+                <h2>Not Just Smart.<br><span class="text-gradient">Human.</span></h2>
+            </div>
+
+            <div class="vision-layout">
+                <!-- Radar Chart -->
+                <div class="radar-container reveal-item">
+                    <svg class="radar-svg" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Grid rings -->
+                        <polygon class="radar-grid" points="150,30 255,90 255,210 150,270 45,210 45,90"/>
+                        <polygon class="radar-grid" points="150,60 225,105 225,195 150,240 75,195 75,105"/>
+                        <polygon class="radar-grid" points="150,90 195,120 195,180 150,210 105,180 105,120"/>
+                        <!-- Axes -->
+                        <line class="radar-axis" x1="150" y1="30" x2="150" y2="270"/>
+                        <line class="radar-axis" x1="45" y1="90" x2="255" y2="210"/>
+                        <line class="radar-axis" x1="255" y1="90" x2="45" y2="210"/>
+                        <!-- Data fill -->
+                        <polygon class="radar-data" points="150,45 240,100 230,200 150,250 65,195 60,100"/>
+                        <!-- Labels -->
+                        <text class="radar-label" x="150" y="20" text-anchor="middle">EQ Analysis</text>
+                        <text class="radar-label" x="268" y="88" text-anchor="start">Voice</text>
+                        <text class="radar-label" x="268" y="218" text-anchor="start">Memory</text>
+                        <text class="radar-label" x="150" y="290" text-anchor="middle">Privacy</text>
+                        <text class="radar-label" x="32" y="218" text-anchor="end">Coaching</text>
+                        <text class="radar-label" x="32" y="88" text-anchor="end">Adapt</text>
+                    </svg>
+                </div>
+
+                <div class="vision-cards">
+                    <div class="vision-card reveal-item">
+                        <div class="vision-number">01</div>
+                        <h3>Multimodal Sentiment</h3>
+                        <p>Text, voice tone, typing speed, punctuation patterns. Optional micro-expression tracking for deep-focus sessions.</p>
+                    </div>
+                    <div class="vision-card reveal-item">
+                        <div class="vision-number">02</div>
+                        <h3>Adaptive Personality</h3>
+                        <p>Logical and direct? Lyra mirrors that. Overwhelmed? She shifts to soft, reassuring tone. Real-time style matching.</p>
+                    </div>
+                    <div class="vision-card reveal-item">
+                        <div class="vision-number">03</div>
+                        <h3>Privacy by Architecture</h3>
+                        <p>E2E encryption for emotional telemetry. On-device processing for sensitive data. Zero-knowledge by design.</p>
+                    </div>
+                    <div class="vision-card reveal-item">
+                        <div class="vision-number">04</div>
+                        <h3>Responsible AI</h3>
+                        <p>AI companion, not a therapist. Detects severe distress and gently provides crisis resources and professional referrals.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Section -->
+    <section class="tech-section" id="tech">
+        <div class="section-inner">
+            <div class="section-header reveal-item">
+                <span class="section-tag"><i class="fa-solid fa-microchip"></i> Under the Hood</span>
+                <h2>Built on<br><span class="text-gradient">Proven Foundations</span></h2>
+            </div>
+            <div class="tech-strip reveal-item">
+                <div class="tech-chip"><i class="fa-solid fa-brain"></i> LLaMA 3.3 70B</div>
+                <div class="tech-chip"><i class="fa-brands fa-python"></i> Python Core</div>
+                <div class="tech-chip"><i class="fa-solid fa-database"></i> Episodic Memory DB</div>
+                <div class="tech-chip"><i class="fa-solid fa-microphone"></i> WebSpeech API</div>
+                <div class="tech-chip"><i class="fa-solid fa-shield-halved"></i> E2E Encryption</div>
+                <div class="tech-chip"><i class="fa-solid fa-code"></i> Sandboxed Execution</div>
+                <div class="tech-chip"><i class="fa-solid fa-magnifying-glass"></i> Multi-Source Search</div>
+                <div class="tech-chip"><i class="fa-solid fa-heart-pulse"></i> EQ Engine</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="section-inner">
+            <div class="cta-card reveal-item">
+                <h2>Ready to meet<br>your second brain?</h2>
+                <p>Lyra is live and learning. Start a conversation — she's been expecting you.</p>
+                <a href="/app" class="btn-primary btn-large">
+                    <i class="fa-solid fa-bolt"></i> Launch Lyra
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <span class="nav-dot"></span>
+                <span>LYRA</span>
+                <span class="footer-sep">·</span>
+                <span class="footer-tagline">The AI That Feels</span>
+            </div>
+            <div class="footer-credit">Built with 💜 by Hardik Sharma</div>
+        </div>
+    </footer>
+
+    <script src="landing.js"></script>
+</body>
+</html>

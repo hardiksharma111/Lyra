@@ -133,6 +133,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Set up Settings Page DOM bindings
         setupSettingsPageBindings();
 
+        // Set up Command Palette
+        setupCommandPalette();
+
         showChatView();
     }
 
@@ -997,5 +1000,103 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Failed to load chat history:", e);
             state.sessions = {};
         }
+    }
+
+    // ==========================================
+    // Command Palette (Ctrl+K)
+    // ==========================================
+    function setupCommandPalette() {
+        const overlay = document.getElementById("cmd-palette");
+        const searchInput = document.getElementById("cmd-search");
+        const resultsContainer = document.getElementById("cmd-results");
+        let selectedIndex = 0;
+
+        // Available commands registry
+        const commands = [
+            { label: "New Chat", icon: "fa-plus", action: () => { startNewChat(); showChatView(); } },
+            { label: "Open Settings", icon: "fa-gear", action: showSettingsView },
+            { label: "Toggle Debug Mode", icon: "fa-terminal", action: toggleDebugMode },
+            { label: "Toggle Voice On/Off", icon: "fa-volume-high", action: () => setSpeechEnabled(!state.settings.speechEnabled) },
+            { label: "Clear Chat History", icon: "fa-trash", action: () => { localStorage.removeItem("lyra_chat_sessions"); state.sessions = {}; updateHistorySidebar(); startNewChat(); showChatView(); } },
+            { label: "Go to Home Page", icon: "fa-house", action: () => { window.location.href = "/"; } },
+        ];
+
+        function openPalette() {
+            overlay.classList.remove("hidden");
+            searchInput.value = "";
+            selectedIndex = 0;
+            renderResults(commands);
+            setTimeout(() => searchInput.focus(), 50);
+        }
+
+        function closePalette() {
+            overlay.classList.add("hidden");
+            searchInput.value = "";
+        }
+
+        function renderResults(filteredCmds) {
+            resultsContainer.innerHTML = "";
+            filteredCmds.forEach((cmd, i) => {
+                const item = document.createElement("div");
+                item.className = `cmd-item ${i === selectedIndex ? "selected" : ""}`;
+                item.innerHTML = `<i class="fa-solid ${cmd.icon}"></i><span class="cmd-item-label">${cmd.label}</span>`;
+                item.addEventListener("click", () => {
+                    cmd.action();
+                    closePalette();
+                });
+                resultsContainer.appendChild(item);
+            });
+        }
+
+        function getFilteredCommands() {
+            const query = searchInput.value.toLowerCase().trim();
+            if (!query) return commands;
+            return commands.filter(c => c.label.toLowerCase().includes(query));
+        }
+
+        // Keyboard: Ctrl+K to open
+        document.addEventListener("keydown", (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+                e.preventDefault();
+                if (overlay.classList.contains("hidden")) {
+                    openPalette();
+                } else {
+                    closePalette();
+                }
+            }
+
+            if (!overlay.classList.contains("hidden")) {
+                if (e.key === "Escape") {
+                    closePalette();
+                } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    const filtered = getFilteredCommands();
+                    selectedIndex = Math.min(selectedIndex + 1, filtered.length - 1);
+                    renderResults(filtered);
+                } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, 0);
+                    renderResults(getFilteredCommands());
+                } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    const filtered = getFilteredCommands();
+                    if (filtered[selectedIndex]) {
+                        filtered[selectedIndex].action();
+                        closePalette();
+                    }
+                }
+            }
+        });
+
+        // Search filtering
+        searchInput.addEventListener("input", () => {
+            selectedIndex = 0;
+            renderResults(getFilteredCommands());
+        });
+
+        // Click outside to close
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) closePalette();
+        });
     }
 });

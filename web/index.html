@@ -4,11 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lyra — Second Brain</title>
-    <!-- Google Fonts: Outfit -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- FontAwesome icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -29,48 +27,42 @@
         <div class="orb-ring-1"></div>
         <div class="orb-ring-2"></div>
         <div class="orb-glow"></div>
-        <!-- Speech Waves -->
         <div class="orb-wave wave-1"></div>
         <div class="orb-wave wave-2"></div>
     </div>
 
     <div class="app-container">
-        <!-- Sidebar: Session History & Settings -->
+        <!-- Sidebar -->
         <aside class="sidebar glass">
             <div class="sidebar-header">
                 <div class="logo">
                     <span class="logo-dot"></span>
                     <h1>LYRA</h1>
                 </div>
-                <span class="version-badge">v0.6</span>
+                <span class="version-badge">v0.7</span>
             </div>
 
-            <!-- Sidebar Action Buttons -->
-            <div class="sidebar-actions-container">
-                <button id="btn-new-chat" class="new-chat-btn">
-                    <i class="fa-solid fa-plus"></i> New Chat
-                </button>
-                <button id="btn-settings" class="sidebar-settings-btn" title="Settings">
-                    <i class="fa-solid fa-gear"></i>
-                </button>
-            </div>
+            <!-- New Chat (full width) -->
+            <button id="btn-new-chat" class="new-chat-btn">
+                <i class="fa-solid fa-plus"></i> New Chat
+            </button>
 
             <!-- Chat History List -->
             <div class="sidebar-section history-section">
                 <h2>Recent chats</h2>
-                <div id="chat-history-list" class="history-list">
-                    <!-- History items injected by JS -->
-                </div>
+                <div id="chat-history-list" class="history-list"></div>
             </div>
             
-            <!-- Sidebar Footer: Debug Toggle Only -->
+            <!-- Sidebar Footer: Debug + Settings stacked -->
             <div class="sidebar-footer glass-panel">
-                <div class="debug-controls">
-                    <button id="btn-debug" class="debug-toggle">
-                        <i class="fa-solid fa-terminal"></i>
-                        <span>Debug Mode: <b id="debug-state">OFF</b></span>
-                    </button>
-                </div>
+                <button id="btn-debug" class="debug-toggle">
+                    <i class="fa-solid fa-terminal"></i>
+                    <span>Debug Mode: <b id="debug-state">OFF</b></span>
+                </button>
+                <button id="btn-settings" class="sidebar-settings-btn-full" title="Settings">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Settings</span>
+                </button>
                 <div class="system-meta">
                     <span>Vega Stellar Brain</span>
                     <span id="model-indicator">LLaMA 3.3</span>
@@ -82,7 +74,6 @@
         <main class="workspace">
             <!-- VIEW 1: Chat Panel -->
             <section id="chat-view" class="chat-container">
-                <!-- Welcome View (Shown when chat is empty) -->
                 <div id="welcome-view" class="welcome-screen">
                     <div class="welcome-content">
                         <h2>Hey Hardik.</h2>
@@ -104,14 +95,10 @@
                     </div>
                 </div>
 
-                <!-- Messages Area -->
-                <div id="chat-messages" class="messages-area hidden">
-                    <!-- Dynamic chat dialogue goes here -->
-                </div>
+                <div id="chat-messages" class="messages-area hidden"></div>
 
-                <!-- Input area -->
                 <div class="input-wrapper glass">
-                    <textarea id="chat-input" placeholder="Ask Lyra something..." rows="1"></textarea>
+                    <textarea id="chat-input" placeholder="Ask Lyra something... (Ctrl+K for commands)" rows="1"></textarea>
                     <div class="input-actions">
                         <button id="btn-mic" class="action-btn" title="Voice Input"><i class="fa-solid fa-microphone"></i></button>
                         <button id="btn-send" class="action-btn primary-btn" title="Send Message"><i class="fa-solid fa-arrow-up"></i></button>
@@ -119,7 +106,7 @@
                 </div>
             </section>
 
-            <!-- VIEW 2: Settings Panel Dashboard (NEW Page View) -->
+            <!-- VIEW 2: Settings Page -->
             <section id="settings-view" class="settings-container hidden">
                 <div class="settings-content-wrapper">
                     <header class="settings-header">
@@ -128,7 +115,7 @@
                     </header>
 
                     <div class="settings-grid">
-                        <!-- Card 1: Voice & Speech Engine -->
+                        <!-- Card 1: Voice & Speech -->
                         <div class="settings-card glass-panel">
                             <h3><i class="fa-solid fa-microphone-lines"></i> Speech & Audio Output</h3>
                             
@@ -152,10 +139,8 @@
                             </div>
 
                             <div class="settings-group">
-                                <label><i class="fa-solid fa-waveform"></i> Voice Tone (Online / Natural Girls Preferred)</label>
-                                <select id="settings-voice" class="settings-control">
-                                    <!-- Populated dynamically -->
-                                </select>
+                                <label><i class="fa-solid fa-waveform"></i> Voice Tone (Natural Girls Preferred)</label>
+                                <select id="settings-voice" class="settings-control"></select>
                             </div>
 
                             <div class="settings-group">
@@ -167,52 +152,67 @@
                             </div>
                         </div>
 
-                        <!-- Card 2: Stellar Avatar Controls -->
+                        <!-- Card 2: Avatar Controls -->
                         <div class="settings-card glass-panel">
                             <h3><i class="fa-solid fa-arrows-spin"></i> Stellar Avatar (Vega Star)</h3>
                             
                             <div class="settings-group">
                                 <label><i class="fa-solid fa-compass"></i> Orb Movement Mode</label>
                                 <select id="settings-avatar-mode" class="settings-control">
-                                    <option value="drag">Draggable Only (Sits in place)</option>
-                                    <option value="wander">Autonomous Wandering (Floats around)</option>
-                                    <option value="both">Draggable & Wandering (Resumes on drop)</option>
+                                    <option value="drag">Draggable Only</option>
+                                    <option value="wander">Autonomous Wandering</option>
+                                    <option value="both">Draggable & Wandering</option>
                                 </select>
                             </div>
                             
-                            <!-- Help Guidance -->
                             <div class="info-tip-box">
                                 <div class="tip-header">
                                     <i class="fa-solid fa-circle-info"></i>
-                                    <h4>Robotic Voice Fix & Tip</h4>
+                                    <h4>Voice Quality Tip</h4>
                                 </div>
-                                <p>Standard system voices are offline and sound mechanical. Open this page in <b>Microsoft Edge</b> or <b>Google Chrome</b> to unlock high-quality <b>Online "Natural" voices</b>. Online/Natural voices sound realistic and human!</p>
+                                <p>Standard system voices sound mechanical. Use <b>Microsoft Edge</b> or <b>Google Chrome</b> for high-quality <b>Online "Natural" voices</b> that sound realistic and human.</p>
+                            </div>
+
+                            <div class="info-tip-box" style="margin-top: 8px;">
+                                <div class="tip-header">
+                                    <i class="fa-solid fa-keyboard"></i>
+                                    <h4>Keyboard Shortcut</h4>
+                                </div>
+                                <p>Press <b>Ctrl + K</b> anywhere to open the Command Palette for quick actions.</p>
                             </div>
                         </div>
 
-                        <!-- Debug Section: Suggestions & Errors (Dynamic Dashboard) -->
-                        <div class="settings-card glass-panel full-width-card" id="debug-dashboard-card">
-                            <h3><i class="fa-solid fa-terminal"></i> Self-Improvement & Logs Dashboard</h3>
-                            
-                            <div class="debug-dashboard-grid">
-                                <div class="debug-pane">
-                                    <h4><i class="fa-solid fa-lightbulb" style="color: #f6d365;"></i> Suggested Improvements</h4>
-                                    <div id="settings-suggestions-list" class="dashboard-pane-list">
-                                        <p class="pane-placeholder">Enable debug mode to retrieve suggesting corrections...</p>
-                                    </div>
-                                </div>
-                                <div class="debug-pane">
-                                    <h4><i class="fa-solid fa-bug" style="color: #ff0844;"></i> Recent System Errors</h4>
-                                    <div id="settings-errors-list" class="dashboard-pane-list">
-                                        <p class="pane-placeholder">Enable debug mode to retrieve error logs...</p>
-                                    </div>
-                                </div>
+                        <!-- Suggestions (full width) -->
+                        <div class="settings-card glass-panel full-width-card">
+                            <h3><i class="fa-solid fa-lightbulb" style="color: #f6d365;"></i> Suggested Improvements</h3>
+                            <div id="settings-suggestions-list" class="dashboard-pane-list">
+                                <p class="pane-placeholder">Enable debug mode to retrieve suggestions...</p>
+                            </div>
+                        </div>
+
+                        <!-- Errors (full width) -->
+                        <div class="settings-card glass-panel full-width-card">
+                            <h3><i class="fa-solid fa-bug" style="color: #ff0844;"></i> Recent System Errors</h3>
+                            <div id="settings-errors-list" class="dashboard-pane-list">
+                                <p class="pane-placeholder">Enable debug mode to retrieve error logs...</p>
                             </div>
                         </div>
                     </div>
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Command Palette Overlay -->
+    <div id="cmd-palette" class="cmd-palette-overlay hidden">
+        <div class="cmd-palette glass-panel">
+            <div class="cmd-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="cmd-search" placeholder="Type a command..." autocomplete="off" spellcheck="false">
+                <kbd>ESC</kbd>
+            </div>
+            <div id="cmd-results" class="cmd-results"></div>
+        </div>
     </div>
 
     <script src="app.js"></script>

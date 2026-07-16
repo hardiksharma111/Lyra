@@ -672,25 +672,18 @@ body {
 .tech-chip i { color: var(--accent-main); }
 
 /* ==========================================
-   Mythology Section
+   Manifesto Section
    ========================================== */
-.myth-section { padding: 100px 0; position: relative; z-index: 1; }
-.myth-inner {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 60px;
-    align-items: center;
-}
-.myth-image-container { position: relative; width: 100%; max-width: 500px; margin: 0 auto; border-radius: 24px; }
-.myth-image { width: 100%; height: auto; border-radius: 24px; display: block; position: relative; z-index: 2; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); border: 1px solid var(--glass-border); }
-.myth-glow { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120%; height: 120%; background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%); z-index: 1; filter: blur(30px); animation: pulse 4s infinite; }
-.myth-content h2 { font-size: 3.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 30px; }
-.myth-story p { font-size: 1.1rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px; }
-.myth-story .myth-highlight { font-size: 1.35rem; color: var(--accent-main); font-style: italic; font-weight: 500; border-left: 4px solid var(--accent-main); padding-left: 24px; margin-bottom: 30px; }
+.manifesto-section { padding: 60px 0 20px; position: relative; z-index: 1; text-align: center; }
+.manifesto-inner { max-width: 900px; margin: 0 auto; }
+.manifesto-text { font-size: 2.5rem; font-weight: 500; line-height: 1.4; color: var(--text-primary); margin-bottom: 24px; font-style: italic; }
+.manifesto-text .text-gradient { font-size: 2.8rem; font-weight: 700; font-style: normal; display: block; margin-top: 10px; }
+.manifesto-subtext { font-size: 1.15rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto; line-height: 1.6; }
 
-@media (max-width: 900px) {
-    .myth-inner { grid-template-columns: 1fr; text-align: center; gap: 40px; }
-    .myth-story .myth-highlight { text-align: left; }
+@media (max-width: 768px) {
+    .manifesto-text { font-size: 1.8rem; }
+    .manifesto-text .text-gradient { font-size: 2rem; }
+    .manifesto-subtext { font-size: 1rem; }
 }
 
 /* ==========================================

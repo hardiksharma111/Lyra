@@ -18,8 +18,8 @@
     --glass-border: rgba(188, 213, 255, 0.08);
     --card-border: rgba(255, 255, 255, 0.04);
     --card-border-hover: rgba(188, 213, 255, 0.12);
-    --canvas-star-color: rgba(188, 213, 255, 0.6);
-    --canvas-line-color: rgba(188, 213, 255, 0.08);
+    --canvas-star-color: rgba(188, 213, 255, 0.9);
+    --canvas-line-color: rgba(188, 213, 255, 0.25);
     --radar-grid: rgba(188, 213, 255, 0.08);
     --radar-data: rgba(103, 66, 243, 0.25);
     --radar-stroke: rgba(103, 66, 243, 0.6);
@@ -42,8 +42,8 @@
     --glass-border: rgba(180, 83, 9, 0.1);
     --card-border: rgba(0, 0, 0, 0.06);
     --card-border-hover: rgba(180, 83, 9, 0.2);
-    --canvas-star-color: rgba(212, 136, 15, 0.5);
-    --canvas-line-color: rgba(212, 136, 15, 0.06);
+    --canvas-star-color: rgba(212, 136, 15, 0.85);
+    --canvas-line-color: rgba(212, 136, 15, 0.25);
     --radar-grid: rgba(180, 83, 9, 0.1);
     --radar-data: rgba(234, 88, 12, 0.18);
     --radar-stroke: rgba(234, 88, 12, 0.5);
@@ -52,8 +52,8 @@
 
 /* Theme transition */
 [data-theme="light"] .twinkling-stars .star {
-    background-color: var(--accent-main);
-    box-shadow: 0 0 4px var(--accent-main);
+    background-color: #fcd34d;
+    box-shadow: 0 0 6px rgba(252, 211, 77, 0.8);
 }
 
 [data-theme="light"] .const-line { stroke: var(--accent-main); }

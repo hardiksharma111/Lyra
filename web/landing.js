@@ -168,23 +168,27 @@ function setupDriftingConstellations() {
 
             // Draw edges
             ctx.strokeStyle = colors.lineColor;
-            ctx.lineWidth = 0.8;
+            ctx.lineWidth = 1.5;
+            ctx.lineCap = 'round';
             c.edges.forEach(([a, b]) => {
                 ctx.beginPath();
                 ctx.moveTo(positions[a].x, positions[a].y);
                 ctx.lineTo(positions[b].x, positions[b].y);
-                ctx.globalAlpha = c.opacity * 0.6;
+                ctx.globalAlpha = c.opacity * 0.8;
                 ctx.stroke();
             });
 
-            // Draw stars
+            // Draw stars with glow
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = colors.starColor;
             positions.forEach(p => {
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, p.r * 1.5, 0, Math.PI * 2);
                 ctx.fillStyle = colors.starColor;
                 ctx.globalAlpha = c.opacity;
                 ctx.fill();
             });
+            ctx.shadowBlur = 0; // reset glow
 
             ctx.globalAlpha = 1;
         });

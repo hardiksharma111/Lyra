@@ -100,9 +100,13 @@ function setupDriftingConstellations() {
             vy: (Math.random() - 0.5) * 0.1 - 0.03, // slight upward drift
             stars: stars,
             edges: edges,
-            opacity: Math.random() * 0.3 + 0.1,
+            maxOpacity: Math.random() * 0.3 + 0.1,
+            opacity: 0, // starts invisible
             rotation: Math.random() * Math.PI * 2,
             rotationSpeed: (Math.random() - 0.5) * 0.0003,
+            life: 0,
+            maxLife: Math.random() * 600 + 400, // frames it stays active
+            state: 'fadeIn' // states: 'fadeIn', 'active', 'fadeOut'
         };
     }
 
@@ -122,7 +126,25 @@ function setupDriftingConstellations() {
         ctx.clearRect(0, 0, W, H);
         const colors = getThemeColors();
 
-        constellations.forEach(c => {
+        constellations.forEach((c, index) => {
+            // Lifecycle: Fade In -> Active -> Fade Out -> Respawn
+            if (c.state === 'fadeIn') {
+                c.opacity += 0.003;
+                if (c.opacity >= c.maxOpacity) {
+                    c.opacity = c.maxOpacity;
+                    c.state = 'active';
+                }
+            } else if (c.state === 'active') {
+                c.life++;
+                if (c.life >= c.maxLife) c.state = 'fadeOut';
+            } else if (c.state === 'fadeOut') {
+                c.opacity -= 0.003;
+                if (c.opacity <= 0) {
+                    constellations[index] = createConstellation();
+                    return; // Skip drawing this frame to allow seamless respawn
+                }
+            }
+
             // Update position
             c.x += c.vx;
             c.y += c.vy;

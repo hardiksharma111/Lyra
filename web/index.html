@@ -26,8 +26,6 @@
         <div class="orb-ring-1"></div>
         <div class="orb-ring-2"></div>
         <div class="orb-glow"></div>
-        <!-- Tooltip that shows mood -->
-        <span class="orb-tooltip" id="avatar-tooltip">Casual Mood</span>
     </div>
 
     <div class="app-container">
@@ -41,10 +39,15 @@
                 <span class="version-badge">v0.6</span>
             </div>
 
-            <!-- New Chat Button -->
-            <button id="btn-new-chat" class="new-chat-btn">
-                <i class="fa-solid fa-plus"></i> New Conversation
-            </button>
+            <!-- Sidebar Action Buttons -->
+            <div class="sidebar-actions-container">
+                <button id="btn-new-chat" class="new-chat-btn">
+                    <i class="fa-solid fa-plus"></i> New Chat
+                </button>
+                <button id="btn-settings" class="sidebar-settings-btn" title="Settings">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
 
             <!-- Chat History List -->
             <div class="sidebar-section history-section">
